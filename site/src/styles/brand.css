@@ -1,0 +1,48 @@
+/*
+ * The brand on Starlight's theme (docs/product/brand.md): wax #1e6b45 for the accent, ink #1a1418
+ * and paper #faf6f2 for text and ground, warm greys between them (round 4's tokens). Starlight
+ * keeps its own rules in cascade layers, so these unlayered values win.
+ */
+
+/* Dark theme (Starlight's default). */
+:root {
+  --sl-color-white: #faf6f2;
+  --sl-color-gray-1: #efe9e2;
+  --sl-color-gray-2: #d6ccc2;
+  --sl-color-gray-3: #a89d96;
+  --sl-color-gray-4: #6f6560;
+  --sl-color-gray-5: #3a312c;
+  --sl-color-gray-6: #211b18;
+  --sl-color-black: #15110f;
+
+  --sl-color-accent-low: #12301f;
+  --sl-color-accent: #3f9b6a;
+  --sl-color-accent-high: #b9e3c9;
+
+  --sl-font: 'Onest', var(--sl-font-system);
+  --sl-font-mono: 'IBM Plex Mono', var(--sl-font-system-mono);
+  --sealup-font-display: 'Outfit', var(--sl-font);
+}
+
+/* Light theme. */
+:root[data-theme='light'] {
+  --sl-color-white: #1a1418;
+  --sl-color-gray-1: #2a2226;
+  --sl-color-gray-2: #3d3438;
+  --sl-color-gray-3: #5e5450;
+  --sl-color-gray-4: #8a7f79;
+  --sl-color-gray-5: #d6ccc2;
+  --sl-color-gray-6: #e9e1d8;
+  --sl-color-gray-7: #f2ece5;
+  --sl-color-black: #faf6f2;
+
+  --sl-color-accent-low: #e3efe7;
+  --sl-color-accent: #1e6b45;
+  --sl-color-accent-high: #165436;
+}
+
+/* Headings in the display face. */
+h1,
+.sl-markdown-content :is(h2, h3) {
+  font-family: var(--sealup-font-display);
+}

@@ -1,0 +1,30 @@
+{
+  "name": "sealup-site",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The docs site at sealup.dev (decision 0036): Astro Starlight, its own dependencies, outside the CLI's bundle and gates.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "node scripts/config-page.ts && node scripts/release-page.ts && astro dev",
+    "build": "node scripts/config-page.ts && node scripts/release-page.ts && astro build",
+    "check": "node scripts/check-site.ts dist",
+    "test": "node --test \"test/*.test.ts\""
+  },
+  "allowScripts": {
+    "esbuild@0.28.2": true
+  },
+  "dependencies": {
+    "@astrojs/starlight": "0.42.5",
+    "@fontsource/ibm-plex-mono": "5.3.0",
+    "@fontsource/onest": "5.3.1",
+    "@fontsource/outfit": "5.3.0",
+    "astro": "7.3.5"
+  },
+  "devDependencies": {
+    "playwright-core": "1.63.0"
+  }
+}

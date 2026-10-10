@@ -1,0 +1,10 @@
+{
+  "ok": 0,
+  "partial": 1,
+  "usage": 2,
+  "auth": 3,
+  "hostKey": 4,
+  "unreachable": 5,
+  "safetyNet": 6,
+  "interrupted": 130
+}

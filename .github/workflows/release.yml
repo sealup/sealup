@@ -1,0 +1,167 @@
+# The release (decision 0017; spec #41 decision 36), public: runs on the tag vX.Y.Z that the
+# private public-sync pushes with the release commit (a tag ruleset lets only that GitHub App and
+# the admins push v* tags). It runs the full checks, then, in the environment `npm`:
+#   1. builds with the release commit's SHA (init's workflow pins the action to it, decision 38);
+#   2. makes the assets (scripts/release-assets.ts): the npm tarball, dist/action.mjs, SHA256SUMS
+#      and the notes; CI's release dry run runs the same two steps on each pull request;
+#   3. attests the tarball and the action bundle (SLSA provenance);
+#   4. stages the npm package through trusted publishing (OIDC, no token anywhere; the trusted
+#      publisher is bound to this file and the environment `npm`, stage-only): the owner
+#      approves it on npm with 2FA;
+#   5. creates the GitHub release as a draft on the tag, with the assets attached, then publishes
+#      it (0017: automatic during 0.x), which makes it immutable.
+# Then it deploys the docs site (pages.yml).
+#
+# Hardening (0017, R26): actions pinned to full commit SHAs, the top-level token reads contents
+# only, checkout keeps no credentials, no install script runs, no cache anywhere (a poisoned
+# cache is how release tokens were stolen in 2025-2026). The release job's writes, and the pages
+# job's, are in the workflow gate's write table.
+
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  checks:
+    name: checks (${{ matrix.os }}, Node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: ['24', '26']
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+          package-manager-cache: false
+
+      - name: Install
+        run: npm ci --ignore-scripts
+
+      - name: Gates
+        run: npm run check
+
+  # CI's end-to-end matrix in the public repo (a test holds them equal).
+  e2e:
+    name: end-to-end (ubuntu-latest, Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: true
+      matrix:
+        node: ['24', '26']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+          package-manager-cache: false
+
+      - name: Install
+        run: npm ci --ignore-scripts
+
+      - name: End-to-end tests
+        run: npm run test:e2e
+
+  release:
+    name: release
+    needs: [checks, e2e]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: npm
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: The tag is the package's version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          test "v$VERSION" = "$GITHUB_REF_NAME" || {
+            echo "::error::the tag $GITHUB_REF_NAME is not package.json's version, v$VERSION"
+            exit 1
+          }
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      - name: npm stages packages (11.15 or later)
+        run: |
+          npm_version=$(npm --version)
+          node -e "const [a, b] = process.argv[1].split('.').map(Number); process.exit(a > 11 || (a === 11 && b >= 15) ? 0 : 1)" "$npm_version" || {
+            echo "::error::npm $npm_version has no npm stage publish: it needs 11.15 or later"
+            exit 1
+          }
+
+      - name: Install
+        run: npm ci --ignore-scripts
+
+      - name: Committed action bundle (check-dist)
+        run: node scripts/check-dist.ts action.mjs
+
+      - name: Release build
+        run: node scripts/build.ts --release-sha "$GITHUB_SHA"
+
+      - name: Bundle budgets
+        run: npm run budget
+
+      - name: Release assets
+        run: node scripts/release-assets.ts "$RUNNER_TEMP/release" --sha "$GITHUB_SHA" --notes "$RUNNER_TEMP/notes.md"
+
+      - name: Attest the npm tarball and the action bundle
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            ${{ runner.temp }}/release/sealup-*.tgz
+            ${{ runner.temp }}/release/action.mjs
+
+      # Trusted publishing: npm trades the job's OIDC token for a one-time credential, and adds
+      # provenance. Stage-only: the version waits for the owner's approval on npm, with 2FA.
+      - name: Stage the npm package
+        run: npm stage publish "$RUNNER_TEMP/release/sealup-$VERSION.tgz"
+
+      - name: Draft the GitHub release, with its assets
+        run: gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md" "$RUNNER_TEMP/release/sealup-$VERSION.tgz" "$RUNNER_TEMP/release/action.mjs" "$RUNNER_TEMP/release/SHA256SUMS"
+
+      - name: Publish the GitHub release (immutable from here)
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false
+
+  pages:
+    name: docs site
+    needs: release
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/pages.yml # zizmor: ignore[self-repository] actionlint 1.7.12 refuses $/ ("ref is missing"); this calls the tag's own pages.yml

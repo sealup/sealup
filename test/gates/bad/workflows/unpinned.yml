@@ -1,0 +1,15 @@
+# Bites: actions pinned to a tag, not a full commit SHA (decision 0017, R26)
+# Expect: unpinned
+name: bad
+on: push
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v6
+      - run: echo finished

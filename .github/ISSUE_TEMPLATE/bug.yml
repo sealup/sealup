@@ -1,0 +1,89 @@
+name: Bug
+description: sealup did something wrong, or stopped where it should not.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. **Never paste a password, a key or a server address**: sealup.yml
+        holds `${NAME}` references, so it is safe to share once the `server:` line is redacted.
+        A security flaw goes to [private reporting](https://github.com/sealup/sealup/security/advisories/new), not here.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you ran, what you expected, what you got (the exit code helps).
+      placeholder: |
+        I ran `sealup deploy production`. I expected ..., but ...
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: sealup version
+      description: The first line sealup prints, or `sealup --version`.
+      placeholder: 0.1.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      description: Where sealup ran.
+      options:
+        - Linux
+        - macOS
+        - Windows
+    validations:
+      required: true
+
+  - type: dropdown
+    id: where
+    attributes:
+      label: Local or CI
+      options:
+        - On my machine
+        - In GitHub Actions (the sealup action)
+        - In GitHub Actions (npx sealup)
+        - In another CI
+    validations:
+      required: true
+
+  - type: dropdown
+    id: protocol
+    attributes:
+      label: Protocol
+      description: The scheme of the target's `server:` URL.
+      options:
+        - sftp://
+        - ssh://
+        - ftps://
+        - ftp://
+    validations:
+      required: true
+
+  - type: input
+    id: host
+    attributes:
+      label: Host type
+      description: The kind of hosting, not its address.
+      placeholder: OVH Perso shared hosting, a cPanel host, a VPS with OpenSSH...
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: sealup.yml (redacted)
+      description: Replace the user and host in `server:` with `user@host`. Keep the rest.
+      render: yaml
+
+  - type: textarea
+    id: dry-run
+    attributes:
+      label: Dry run output
+      description: The output of `sealup deploy --dry-run` (`-n`) for the same target.
+      render: text

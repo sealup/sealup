@@ -1,0 +1,13 @@
+{
+  "format": 1,
+  "version": "0.0.0-source",
+  "command": "init",
+  "status": "ok",
+  "exitCode": 0,
+  "files": [
+    "sealup.yml",
+    "sealup.env",
+    ".gitignore",
+    ".github/workflows/deploy.yml"
+  ]
+}

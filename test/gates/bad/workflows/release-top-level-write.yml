@@ -1,0 +1,20 @@
+# Bites: a write at the top level, even one the write table lists for a job (spec #41 decision 37)
+# Placed at: .github/workflows/release.yml
+# Expect: permissions
+# Line: 11
+name: bad
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - run: echo released

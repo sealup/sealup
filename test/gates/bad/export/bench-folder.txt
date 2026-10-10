@@ -1,0 +1,3 @@
+# Bites: the owner's bench folder on the real hosts
+# Expect: bench-folder
+server: sftp://deploy@ssh.example.com/~/deploy-bench/site

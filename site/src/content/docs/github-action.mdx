@@ -1,0 +1,92 @@
+---
+title: The GitHub Action
+description: Deploy from GitHub Actions with the sealup action, pinned to a release's commit.
+---
+
+import { Code } from '@astrojs/starlight/components';
+import release from '../../generated/release.json';
+
+The sealup action runs the same code as the CLI, in the same process, from the bundle in the
+release: nothing is downloaded when the job runs. Add it after your build step:
+
+<Code code={release.step} lang="yaml" title=".github/workflows/deploy.yml" />
+
+`sealup init` writes a whole workflow around this step (see [Getting started](/getting-started/)):
+on every push to `main`, it checks out the code, builds the site, and deploys it.
+
+## Pin it to a commit
+
+The step above names the release's full commit SHA, with its tag in a comment. A tag can be
+moved to other code; a commit cannot. Every other step of `init`'s workflow is pinned the same
+way. Each release's notes on GitHub give the line for that release, and `sealup init` writes the
+one for the version you run. Dependabot updates such pins, comment included.
+
+## Secrets
+
+Secrets go to the step through `env:`, never through `with:`: `sealup.yml` reads them as
+`${NAME}`, as on your computer. Add each one under **Settings › Secrets and variables ›
+Actions**, or in a GitHub environment to keep production's apart. Before its first line of
+output, sealup asks GitHub to mask each secret (each line of a key), and it never prints them.
+
+The server and the host key can be `${NAME}` references too. Then a changed `sealup.yml` in a
+pull request cannot send your password to another server.
+
+## Inputs
+
+| Input | Default | What it does |
+|---|---|---|
+| `target` | | The target to deploy. Needed when `sealup.yml` has several: CI never shows a picker |
+| `config` | | Path to `sealup.yml`. Empty: searched from `working-directory` up to the repo root |
+| `dry-run` | `false` | Show every change, change nothing. Writes the plan as JSON and sets `status` to `dry-run` |
+| `working-directory` | `.` | The folder to run in: where the search for `sealup.yml` starts |
+
+## Outputs
+
+| Output | What it holds |
+|---|---|
+| `status` | `deployed`, `unchanged`, `dry-run`, `partial`, `failed`, `blocked` (a safety net, exit 6) or `cancelled`. The step fails on the last four |
+| `url` | The target's `url` from `sealup.yml`: use it for `environment.url` |
+| `uploaded` | Files uploaded (or that would be, on a dry run) |
+| `deleted` | Files deleted (or that would be, on a dry run) |
+| `unchanged` | Files already up to date |
+| `bytes` | Bytes uploaded |
+| `duration` | The whole run, in seconds |
+| `plan` | The path to the plan's JSON, on a dry run only |
+
+## Several targets
+
+Name the target with `with:`. A staging deploy on every push and production on a tag, for
+example, are two jobs, each with its own environment and secrets:
+
+```yaml
+- uses: sealup/sealup@<commit SHA> # vX.Y.Z
+  id: sealup
+  with:
+    target: staging
+  env:
+    STAGING_PASSWORD: ${{ secrets.STAGING_PASSWORD }}
+```
+
+## A dry run on pull requests
+
+With `dry-run: true`, the step plans and changes nothing; its job summary lists every change.
+Run it on pull requests to review a deploy before it happens. A dry run still logs in to compare
+with the server, so it needs the secrets too, and GitHub gives none to pull requests from forks.
+
+## One deploy at a time
+
+`init`'s workflow sets a `concurrency` group: a newer push waits for the running deploy, which
+is never cancelled half-way. sealup's own lock covers deploys GitHub cannot see (a laptop,
+another workflow): see [One deploy at a time](/lock/).
+
+## The log and the summary
+
+The job's log shows the same lines as a terminal, with the list of changes in a collapsed
+group. The job summary gets a table of the target, the counts, the timing, and the changes. A
+stop is an error annotation with its reason and a link to its page here; plain FTP and a
+dropped connection get their own annotation.
+
+## Without the action
+
+The action is a convenience: in any CI, `npx sealup@<version> deploy` does the same, with the
+variables in the job's environment.

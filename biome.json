@@ -1,0 +1,96 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "files": {
+    "includes": [
+      "src/**",
+      "test/**",
+      "scripts/**",
+      "*.ts",
+      "*.json",
+      "!test/gates/bad",
+      "!package-lock.json",
+      "!schema.json",
+      "!!spikes",
+      "!!docs",
+      "!!tools",
+      "!!.claude",
+      "!!.worktrees"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2,
+    "lineWidth": 100,
+    "lineEnding": "lf"
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "semicolons": "always",
+      "trailingCommas": "all"
+    }
+  },
+  "assist": {
+    "enabled": true,
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "correctness": {
+        "noUnusedVariables": "error",
+        "noUnusedImports": "error",
+        "noUndeclaredDependencies": "error"
+      },
+      "performance": {
+        "noReExportAll": "error"
+      },
+      "style": {
+        "noNonNullAssertion": "error",
+        "useImportType": "error",
+        "useExportType": "error",
+        "noDefaultExport": "error",
+        "useNodejsImportProtocol": "error",
+        "noParameterAssign": "error",
+        "noCommonJs": "error",
+        "noEnum": "error",
+        "noNamespace": "error",
+        "useConst": "error"
+      },
+      "suspicious": {
+        "noFocusedTests": "error",
+        "noSkippedTests": "error",
+        "noExplicitAny": "error",
+        "noConsole": "error"
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["scripts/**", "test/**"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noConsole": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["*.config.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noDefaultExport": "off"
+          }
+        }
+      }
+    }
+  ]
+}

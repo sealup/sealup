@@ -1,0 +1,17 @@
+# Bites: the pull_request_target trigger (decision 0017, R26)
+# Expect: pull-request-target
+name: bad
+on:
+  pull_request_target:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha }}
+      - run: npm test

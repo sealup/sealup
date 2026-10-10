@@ -1,0 +1,6 @@
+# One line ending everywhere, so Biome's format check gives the same answer on Windows and Linux.
+* text=auto eol=lf
+
+# The action's committed bundle: built bytes, never text to git, so no checkout changes a line
+# ending and check-dist compares exactly what the build made (spec #24 decision 35).
+dist/action.mjs -text

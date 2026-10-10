@@ -1,0 +1,29 @@
+{
+  "format": 1,
+  "version": "0.0.0-source",
+  "command": "deploy",
+  "target": "production",
+  "server": "sftp://deploy@ssh.example.com:22/home/site",
+  "url": "https://example.com",
+  "dryRun": false,
+  "status": "failed",
+  "exitCode": 3,
+  "uploaded": 0,
+  "deleted": 0,
+  "unchanged": 0,
+  "bytes": 0,
+  "durationMs": 0,
+  "timings": {
+    "connect": 0,
+    "scan": 0,
+    "compare": 0,
+    "transfer": 0
+  },
+  "error": {
+    "code": "login-refused",
+    "message": "Login refused by ssh.example.com for user deploy.",
+    "fix": "Check the password in PROD_PASSWORD (targets.production.password).\nsealup never retries a refused login: hosts block an IP after failures.",
+    "state": "Nothing was changed on production."
+  },
+  "written": 0
+}

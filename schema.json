@@ -1,0 +1,489 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "anyOf": [
+    {
+      "type": "object",
+      "properties": {
+        "server": {
+          "type": "string",
+          "description": "sftp|ssh|ftps|ftp://user@host[:port]/folder (/~/… is in the login folder)"
+        },
+        "password": {
+          "type": "string",
+          "description": "A variable only, like ${SEALUP_PASSWORD}; or privateKey"
+        },
+        "privateKey": {
+          "type": "string",
+          "description": "A variable holding the key file, like ${DEPLOY_KEY}; or password"
+        },
+        "passphrase": {
+          "type": "string",
+          "description": "A variable only, like ${KEY_PASSPHRASE}, for an encrypted key"
+        },
+        "hostKey": {
+          "type": "string",
+          "description": "The OpenSSH public key line keyscan writes"
+        },
+        "tlsFingerprint": {
+          "type": "string",
+          "description": "ftps only: the certificate's SHA-256 (AA:BB:…, 32 pairs) that keyscan writes; it replaces the CA and host name checks"
+        },
+        "url": {
+          "type": "string",
+          "description": "The site address, shown after a deploy"
+        },
+        "allow": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "empty-source",
+              "symlinks",
+              "root-folder"
+            ]
+          }
+        },
+        "checkServer": {
+          "type": "boolean",
+          "description": "Put back files changed on the server (default false)"
+        },
+        "parallel": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256,
+          "description": "SFTP requests in flight (default 64); FTP connections (default 4, at most 16)"
+        },
+        "timeout": {
+          "type": "string",
+          "pattern": "^([1-9][0-9]{0,5})(s|m)$",
+          "description": "Per operation, like 30s or 2m (default 30s)"
+        },
+        "manifest": {
+          "type": "string",
+          "description": "Manifest folder, from the login folder (default .sealup)"
+        },
+        "upload": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "description": "Server folder (. is the target folder), or file path for a single file"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "to": {
+                        "type": "string",
+                        "description": "Server folder (. is the target folder), or file path for a single file"
+                      },
+                      "mirror": {
+                        "type": "boolean",
+                        "description": "Also delete server files sealup did not upload (minus excludes)"
+                      }
+                    },
+                    "required": [
+                      "to"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            }
+          ],
+          "description": "A folder sent to the target folder, or local: server pairs (folders or single files)"
+        },
+        "exclude": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "write": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "A variable only, like ${APP_ENV}"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "description": "A variable only, like ${APP_ENV}"
+                  },
+                  "mode": {
+                    "type": "string",
+                    "pattern": "^0?[0-7]{3}$",
+                    "description": "File mode, quoted (default '0600')"
+                  },
+                  "allowPublic": {
+                    "type": "boolean",
+                    "description": "Write it even into a folder that looks public"
+                  }
+                },
+                "required": [
+                  "from"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "description": "server file: secret pairs, each file written from a secret, mode 0600"
+        },
+        "pull": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "description": "Local folder (or file), inside the folder of sealup.yml"
+          },
+          "description": "server folder (or file): local folder pairs, for sealup pull"
+        }
+      },
+      "required": [
+        "server",
+        "upload"
+      ],
+      "additionalProperties": false,
+      "if": {
+        "properties": {
+          "server": {
+            "type": "string",
+            "pattern": "^ftps?://"
+          }
+        },
+        "required": [
+          "server"
+        ]
+      },
+      "then": {
+        "properties": {
+          "parallel": {
+            "maximum": 16
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "properties": {
+        "parallel": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256,
+          "description": "SFTP requests in flight (default 64); FTP connections (default 4, at most 16)"
+        },
+        "timeout": {
+          "type": "string",
+          "pattern": "^([1-9][0-9]{0,5})(s|m)$",
+          "description": "Per operation, like 30s or 2m (default 30s)"
+        },
+        "manifest": {
+          "type": "string",
+          "description": "Manifest folder, from the login folder (default .sealup)"
+        },
+        "upload": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "description": "Server folder (. is the target folder), or file path for a single file"
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "to": {
+                        "type": "string",
+                        "description": "Server folder (. is the target folder), or file path for a single file"
+                      },
+                      "mirror": {
+                        "type": "boolean",
+                        "description": "Also delete server files sealup did not upload (minus excludes)"
+                      }
+                    },
+                    "required": [
+                      "to"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              }
+            }
+          ],
+          "description": "A folder sent to the target folder, or local: server pairs (folders or single files)"
+        },
+        "exclude": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "write": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "string",
+                "description": "A variable only, like ${APP_ENV}"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string",
+                    "description": "A variable only, like ${APP_ENV}"
+                  },
+                  "mode": {
+                    "type": "string",
+                    "pattern": "^0?[0-7]{3}$",
+                    "description": "File mode, quoted (default '0600')"
+                  },
+                  "allowPublic": {
+                    "type": "boolean",
+                    "description": "Write it even into a folder that looks public"
+                  }
+                },
+                "required": [
+                  "from"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "description": "server file: secret pairs, each file written from a secret, mode 0600"
+        },
+        "pull": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "description": "Local folder (or file), inside the folder of sealup.yml"
+          },
+          "description": "server folder (or file): local folder pairs, for sealup pull"
+        },
+        "targets": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "server": {
+                "type": "string",
+                "description": "sftp|ssh|ftps|ftp://user@host[:port]/folder (/~/… is in the login folder)"
+              },
+              "password": {
+                "type": "string",
+                "description": "A variable only, like ${SEALUP_PASSWORD}; or privateKey"
+              },
+              "privateKey": {
+                "type": "string",
+                "description": "A variable holding the key file, like ${DEPLOY_KEY}; or password"
+              },
+              "passphrase": {
+                "type": "string",
+                "description": "A variable only, like ${KEY_PASSPHRASE}, for an encrypted key"
+              },
+              "hostKey": {
+                "type": "string",
+                "description": "The OpenSSH public key line keyscan writes"
+              },
+              "tlsFingerprint": {
+                "type": "string",
+                "description": "ftps only: the certificate's SHA-256 (AA:BB:…, 32 pairs) that keyscan writes; it replaces the CA and host name checks"
+              },
+              "url": {
+                "type": "string",
+                "description": "The site address, shown after a deploy"
+              },
+              "allow": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "empty-source",
+                    "symlinks",
+                    "root-folder"
+                  ]
+                }
+              },
+              "checkServer": {
+                "type": "boolean",
+                "description": "Put back files changed on the server (default false)"
+              },
+              "parallel": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 256,
+                "description": "SFTP requests in flight (default 64); FTP connections (default 4, at most 16)"
+              },
+              "timeout": {
+                "type": "string",
+                "pattern": "^([1-9][0-9]{0,5})(s|m)$",
+                "description": "Per operation, like 30s or 2m (default 30s)"
+              },
+              "manifest": {
+                "type": "string",
+                "description": "Manifest folder, from the login folder (default .sealup)"
+              },
+              "upload": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "description": "Server folder (. is the target folder), or file path for a single file"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "to": {
+                              "type": "string",
+                              "description": "Server folder (. is the target folder), or file path for a single file"
+                            },
+                            "mirror": {
+                              "type": "boolean",
+                              "description": "Also delete server files sealup did not upload (minus excludes)"
+                            }
+                          },
+                          "required": [
+                            "to"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
+                  }
+                ],
+                "description": "A folder sent to the target folder, or local: server pairs (folders or single files)"
+              },
+              "exclude": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "write": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "anyOf": [
+                    {
+                      "type": "string",
+                      "description": "A variable only, like ${APP_ENV}"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "from": {
+                          "type": "string",
+                          "description": "A variable only, like ${APP_ENV}"
+                        },
+                        "mode": {
+                          "type": "string",
+                          "pattern": "^0?[0-7]{3}$",
+                          "description": "File mode, quoted (default '0600')"
+                        },
+                        "allowPublic": {
+                          "type": "boolean",
+                          "description": "Write it even into a folder that looks public"
+                        }
+                      },
+                      "required": [
+                        "from"
+                      ],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "description": "server file: secret pairs, each file written from a secret, mode 0600"
+              },
+              "pull": {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {
+                  "type": "string",
+                  "description": "Local folder (or file), inside the folder of sealup.yml"
+                },
+                "description": "server folder (or file): local folder pairs, for sealup pull"
+              }
+            },
+            "required": [
+              "server"
+            ],
+            "additionalProperties": false,
+            "if": {
+              "properties": {
+                "server": {
+                  "type": "string",
+                  "pattern": "^ftps?://"
+                }
+              },
+              "required": [
+                "server"
+              ]
+            },
+            "then": {
+              "properties": {
+                "parallel": {
+                  "maximum": 16
+                }
+              }
+            }
+          }
+        }
+      },
+      "required": [
+        "upload",
+        "targets"
+      ],
+      "additionalProperties": false
+    }
+  ],
+  "title": "sealup.yml",
+  "description": "sealup deploy configuration"
+}

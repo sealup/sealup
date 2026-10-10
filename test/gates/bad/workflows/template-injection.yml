@@ -1,0 +1,16 @@
+# Bites: untrusted input expanded into a shell script, and a job that needs a missing job (only
+# actionlint and zizmor catch these; scripts/check-workflows.ts passes this file)
+# Expect: actionlint, zizmor
+name: bad
+on: pull_request
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    needs: [missing-job]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: echo "${{ github.event.pull_request.title }}"

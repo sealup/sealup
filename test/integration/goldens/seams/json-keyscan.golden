@@ -1,0 +1,15 @@
+{
+  "format": 1,
+  "version": "0.0.0-source",
+  "command": "keyscan",
+  "target": "ssh.example.com",
+  "server": "sftp://deploy@ssh.example.com:22/home/site/www",
+  "status": "ok",
+  "exitCode": 0,
+  "hostKey": {
+    "type": "ssh-ed25519",
+    "fingerprint": "SHA256:8H38JEnHSrMlcjtEnYeJa5rF1sOMfr07rcpM5uV9ftM",
+    "line": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIH4R/D1Ip9CHKXPz6VH9sxNwStOVJkTzt9xIQzLywt86",
+    "state": "not-saved"
+  }
+}

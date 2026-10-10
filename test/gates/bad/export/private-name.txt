@@ -1,0 +1,3 @@
+# Bites: a client name from the owner's names list (the test's list holds a synthetic one)
+# Expect: private-name
+deployed for Acme Bakery

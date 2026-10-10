@@ -1,0 +1,23 @@
+{
+  "format": 1,
+  "version": "0.0.0-source",
+  "command": "deploy",
+  "target": "production",
+  "server": "sftp://deploy@ssh.example.com:22/home/site",
+  "url": "https://example.com",
+  "dryRun": false,
+  "status": "ok",
+  "exitCode": 0,
+  "uploaded": 1200,
+  "deleted": 0,
+  "unchanged": 0,
+  "bytes": 1228800,
+  "durationMs": 15600,
+  "timings": {
+    "connect": 600,
+    "scan": 1200,
+    "compare": 100,
+    "transfer": 13700
+  },
+  "written": 0
+}

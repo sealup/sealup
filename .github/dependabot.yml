@@ -1,0 +1,30 @@
+# Dependabot (R25, decision 0010; spec #41 decision 39): npm and the Actions pins, each in one
+# grouped PR a week, proposing a version only once it has been public for 7 days. Security
+# updates skip the cooldown. Every PR runs the full CI: the gates, the bundle check and budgets.
+
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      npm:
+        patterns: ['*']
+    commit-message:
+      prefix: chore
+      include: scope
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns: ['*']
+    commit-message:
+      prefix: ci

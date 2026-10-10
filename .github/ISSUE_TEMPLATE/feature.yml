@@ -1,0 +1,28 @@
+name: Feature
+description: Something sealup should do, or do differently.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        sealup stays small on purpose: it syncs a build to a server, and your workflow builds.
+        Saying what you are trying to do helps more than a design.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you are trying to do
+      description: The deploy you run today, and where sealup gets in the way.
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help
+      description: The command, flag or config key you have in mind, if any.
+
+  - type: textarea
+    id: today
+    attributes:
+      label: How you work around it today

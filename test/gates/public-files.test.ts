@@ -1,0 +1,200 @@
+// The public repo's own files (spec #41 decision 39; exploration 05 §2): what a visitor, a
+// contributor or a security researcher finds on day one, read as GitHub and npm read them.
+// actionlint, zizmor and the workflow gate check the workflows themselves (workflows.test.ts, CI).
+
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { parse } from 'yaml';
+import { repoRoot } from '../../scripts/gates.ts';
+
+const read = (path: string): string => readFileSync(join(repoRoot, path), 'utf8');
+const yamlOf = (path: string): unknown => parse(read(path));
+
+interface Update {
+  readonly 'package-ecosystem': string;
+  readonly directory: string;
+  readonly schedule: { readonly interval: string };
+  readonly cooldown?: { readonly 'default-days'?: number };
+  readonly groups?: Record<string, { readonly patterns?: readonly string[] }>;
+}
+
+describe('Dependabot (R25)', () => {
+  const updates = (yamlOf('.github/dependabot.yml') as { updates: readonly Update[] }).updates;
+
+  it('updates npm and the Actions, each in one grouped PR, after 7 days of cooldown', () => {
+    expect(updates.map((u) => u['package-ecosystem']).sort()).toEqual(['github-actions', 'npm']);
+    for (const update of updates) {
+      expect(update.directory).toBe('/');
+      expect(update.cooldown?.['default-days']).toBe(7);
+      const groups = Object.values(update.groups ?? {});
+      expect(groups.map((group) => group.patterns)).toEqual([['*']]);
+    }
+  });
+});
+
+/** A Markdown file's `##` headings, in order. */
+const headings = (path: string): string[] =>
+  [...read(path).matchAll(/^## (.+)$/gm)].map((match) => match[1] ?? '');
+
+describe('README (exploration 05 §2)', () => {
+  const readme = read('README.md');
+
+  it("has exploration 05's sections, in its order", () => {
+    expect(headings('README.md')).toEqual([
+      'Why',
+      'Quick start',
+      'Config',
+      'Where it runs',
+      'How releases are made',
+      'Links',
+    ]);
+  });
+
+  it('says what sealup does in one sentence (story 85)', () => {
+    const pitch = readme.split('\n').find((line) => line.startsWith('**')) ?? '';
+    expect(pitch.match(/[.!?](\s|$)/g)).toHaveLength(1);
+  });
+
+  it('shows the S07 run as text, as sealup prints it in that golden, with no image (I-095)', () => {
+    const intro = readme.slice(0, readme.indexOf('\n## '));
+    const block = /```text\n\$ npx sealup deploy production\n([\s\S]*?)\n```/.exec(intro)?.[1];
+    // The golden's expected lines, as its string literals give them, colour tokens dropped.
+    const golden = read('test/integration/goldens/s07-first-deploy.test.ts');
+    const printed = new Set(
+      [...golden.matchAll(/^\s*'(.*)',$/gm)].map(([, line]) =>
+        (line ?? '').replace(/\{[a-z]*\}|\{\/\}/g, ''),
+      ),
+    );
+    const lines = (block ?? '').split('\n').filter((line) => line !== '');
+    expect(lines).toHaveLength(6);
+    for (const line of lines) expect(printed, line).toContain(line);
+    expect(readme).not.toMatch(/!\[|<img|\.gif\b/i);
+  });
+
+  it('gives the action pinned by SHA, the npx command and the verify commands', () => {
+    expect(readme).toMatch(/uses: sealup\/sealup@<[^>]+> # v\d+\.\d+\.\d+/);
+    expect(readme).toContain('npx sealup init');
+    expect(readme).toContain('gh attestation verify');
+    expect(readme).toContain('npm audit signatures');
+  });
+
+  // vision.md, which stays private, is held to it in test/private/vision.test.ts.
+  it("follows the owner's round 2 note: no clients who already pay (README, npm)", () => {
+    const description = (JSON.parse(read('package.json')) as { description: string }).description;
+    for (const text of [readme, description]) {
+      expect(text).not.toMatch(/clients? already pays? for/);
+    }
+  });
+});
+
+describe('SECURITY.md, CONTRIBUTING.md and the code of conduct', () => {
+  it('SECURITY.md follows exploration 03 §8, vsftpd among the known limits', () => {
+    expect(headings('SECURITY.md')).toEqual([
+      'Supported versions',
+      'Reporting a vulnerability',
+      'What sealup protects',
+      'How sealup keeps your credentials safe',
+      'How sealup protects your files',
+      'How sealup ships',
+      'What you should do',
+      'Known limits',
+    ]);
+    const limits = read('SECURITY.md').split('## Known limits')[1] ?? '';
+    expect(limits).toContain('vsftpd');
+    expect(read('SECURITY.md')).toContain(
+      'https://github.com/sealup/sealup/security/advisories/new',
+    );
+  });
+
+  it('SECURITY.md verifies both attested assets: the npm tarball and action.mjs', () => {
+    expect(read('SECURITY.md')).toMatch(/^gh attestation verify sealup-[\d.]+\.tgz --repo /m);
+    expect(read('SECURITY.md')).toMatch(/^gh attestation verify action\.mjs --repo /m);
+  });
+
+  it('CONTRIBUTING.md covers the build, the tests, the commits, large PRs and the port back', () => {
+    expect(headings('CONTRIBUTING.md')).toEqual([
+      'Build and test',
+      'Commits',
+      'Before a large pull request',
+      'What happens to your pull request',
+    ]);
+  });
+
+  it('the code of conduct is the Contributor Covenant 3.0', () => {
+    expect(read('CODE_OF_CONDUCT.md')).toMatch(/Contributor Covenant[^\n]*version 3\.0/i);
+  });
+});
+
+interface FormField {
+  readonly type: string;
+  readonly id?: string;
+  readonly validations?: { readonly required?: boolean };
+}
+
+describe('issue forms and the PR template', () => {
+  const form = (name: string) =>
+    yamlOf(`.github/ISSUE_TEMPLATE/${name}.yml`) as { name: string; body: readonly FormField[] };
+
+  it('turns blank issues off and points security reports to private reporting', () => {
+    const config = yamlOf('.github/ISSUE_TEMPLATE/config.yml') as {
+      blank_issues_enabled: boolean;
+      contact_links: readonly { url: string }[];
+    };
+    expect(config.blank_issues_enabled).toBe(false);
+    expect(config.contact_links.map((link) => link.url)).toContain(
+      'https://github.com/sealup/sealup/security/advisories/new',
+    );
+  });
+
+  it('asks a bug for what reproduces it, each answer required but the config and output', () => {
+    const fields = form('bug').body.filter((field) => field.type !== 'markdown');
+    expect(fields.map((field) => field.id)).toEqual([
+      'what-happened',
+      'version',
+      'os',
+      'where',
+      'protocol',
+      'host',
+      'config',
+      'dry-run',
+    ]);
+    const required = fields.filter((field) => field.validations?.required === true);
+    expect(required.map((field) => field.id)).toEqual([
+      'what-happened',
+      'version',
+      'os',
+      'where',
+      'protocol',
+      'host',
+    ]);
+  });
+
+  it('has a feature form and a short PR template', () => {
+    expect(form('feature').body.some((field) => field.type === 'textarea')).toBe(true);
+    const template = read('.github/pull_request_template.md');
+    expect(template.split('\n').length).toBeLessThanOrEqual(20);
+    expect(template).toMatch(/no secrets?/i);
+  });
+});
+
+describe('Scorecard (I-045)', () => {
+  const workflow = yamlOf('.github/workflows/scorecard.yml') as {
+    on: { schedule?: readonly { cron: string }[] };
+    jobs: Record<string, { steps: readonly { uses?: string }[] }>;
+  };
+
+  it('runs every week, on a cron of one day of the week', () => {
+    const crons = (workflow.on.schedule ?? []).map((entry) => entry.cron.split(' '));
+    expect(crons).toHaveLength(1);
+    const [minute, hour, dayOfMonth, month, dayOfWeek] = crons[0] ?? [];
+    expect([minute, hour].every((field) => /^\d+$/.test(field ?? ''))).toBe(true);
+    expect([dayOfMonth, month]).toEqual(['*', '*']);
+    expect(dayOfWeek).toMatch(/^[0-6]$/);
+  });
+
+  it("runs OpenSSF's Scorecard action", () => {
+    const uses = Object.values(workflow.jobs).flatMap((job) => job.steps.map((s) => s.uses));
+    expect(uses.some((step) => step?.startsWith('ossf/scorecard-action@'))).toBe(true);
+  });
+});

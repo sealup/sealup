@@ -1,0 +1,17 @@
+# Bites: a write in flow style, which the write table never matches, even in a listed job
+# (spec #41 decision 37)
+# Placed at: .github/workflows/release.yml
+# Expect: permissions
+# Line: 15
+name: bad
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions: { contents: write }
+    steps:
+      - run: echo released

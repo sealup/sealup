@@ -1,0 +1,3 @@
+# Bites: a path on a developer's own machine (a synthetic user folder)
+# Expect: local-drive-path
+read from C:\Users\someone\projects\site\index.js

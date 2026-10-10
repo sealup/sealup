@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security flaw
+    url: https://github.com/sealup/sealup/security/advisories/new
+    about: Privately, never in a public issue. See SECURITY.md.
+  - name: Docs
+    url: https://sealup.dev
+    about: Every error sealup prints links to its page there.

@@ -1,0 +1,692 @@
+---
+// The home page at sealup.dev/ (decision 0037, ticket #67): landing round 4, signed off by the
+// owner (docs/exploration/10-notes/sign-off.md), with the CLI's own words. The commands and the
+// output samples come from src/home/samples.ts (checked against help and the goldens by
+// test/home.test.ts), the Action step and the version from the release facts of this build
+// (scripts/release-page.ts). Every other page is Starlight's; this one keeps round 4's own header
+// and footer, and follows the theme chosen on the docs.
+import onest400 from '@fontsource/onest/files/onest-latin-400-normal.woff2?url';
+import outfit700 from '@fontsource/outfit/files/outfit-latin-700-normal.woff2?url';
+import plexMono500 from '@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2?url';
+import plexMono600 from '@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-600-normal.woff2?url';
+import wordmarkOnDark from '../assets/sealup-wordmark-on-dark.svg?url';
+import wordmark from '../assets/sealup-wordmark.svg?url';
+import OutputLine from '../components/OutputLine.astro';
+import release from '../generated/release.json';
+import { cells, inline, plain } from '../home/lines.ts';
+import { commands, config, home, progressAt, progressTotals, target } from '../home/samples.ts';
+import '../styles/fonts.css';
+import '../styles/home.css';
+
+const version = `v${release.version}`;
+const redeploy = home.samples.redeploy.lines;
+const dryRun = home.samples.dryRun.lines;
+const [heading = '', ...rows] = home.samples.summary.lines;
+const title = heading.replace(/^###\s+✅\s+/, '');
+const header = rows.findIndex((row) => cells(row)[0] === '');
+const targetRows = rows.slice(0, header).map(cells);
+const [, ...countHead] = cells(rows[header] ?? '');
+const countRows = rows.slice(header + 1).map(cells);
+
+/** The page's sealup.yml, each line as its key and its value. */
+const yaml = config.map((line) => {
+  const at = line.indexOf(': ');
+  return { key: line.slice(0, at), value: line.slice(at + 2) };
+});
+
+/** The terminal's last frame as plain text, for screen readers and print. */
+const lastFrame = [`$ ${commands.deploy}`, ...redeploy.map(plain)].join('\n');
+
+/** The terminal's step for each line of the redeploy: the target, the key, the plan, the result. */
+const stepOf = (index: number): number => (index < 2 ? index + 1 : index < progressAt + 1 ? 3 : 5);
+
+/** A line of the Action step, split for colour: indent and dash, key, value, trailing comment. */
+const yamlParts = (line: string) => {
+  if (/^\s*#/.test(line)) return { comment: line };
+  const match = /^(\s*(?:- )?)([\w-]+)(:)(.*?)(\s+#.*)?$/.exec(line);
+  if (match === null) return { value: line };
+  return { lead: match[1], key: match[2], value: `${match[3]}${match[4]}`, comment: match[5] };
+};
+const step = release.step.split('\n').map(yamlParts);
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>sealup — Push to main. Site updated.</title>
+    <meta
+      name="description"
+      content="sealup deploys a built site to any hosting you can reach over SFTP, SSH or FTP, including the cheapest plan. Only changed files travel, never a half-written file, no secrets in the repo."
+    />
+    <link rel="canonical" href="https://sealup.dev/" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="preload" href={outfit700} as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href={onest400} as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href={plexMono500} as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href={plexMono600} as="font" type="font/woff2" crossorigin />
+    <script is:inline>
+      // The theme chosen on the docs (Starlight keeps it under this key), else the system's.
+      try {
+        const stored = localStorage.getItem('starlight-theme');
+        const light = matchMedia('(prefers-color-scheme: light)').matches;
+        document.documentElement.dataset.theme =
+          stored === 'light' || stored === 'dark' ? stored : light ? 'light' : 'dark';
+      } catch {}
+    </script>
+  </head>
+  <body>
+    <a class="skip" href="#top">Skip to content</a>
+    <header class="nav">
+      <div class="wrap">
+        <a class="logo" href="/" aria-label="sealup, home">
+          <img class="on-light" src={wordmark} alt="sealup" width="78" height="36" />
+          <img class="on-dark" src={wordmarkOnDark} alt="sealup" width="78" height="36" />
+        </a>
+        <span class="ver">{version}</span>
+        <nav aria-label="Site">
+          <a href="/getting-started/">Docs</a>
+          <a href="https://github.com/sealup/sealup">GitHub</a>
+        </nav>
+      </div>
+    </header>
+
+    <main id="top" tabindex="-1">
+      <div id="live" class="sr" aria-live="polite"></div>
+
+      <section class="hero" aria-labelledby="h1">
+        <div class="wrap">
+          <span class="eyebrow">Open source · GitHub Action and CLI</span>
+          <h1 id="h1">Push to main.<br />Site updated.</h1>
+          <p class="lede">
+            sealup deploys a built site to any hosting you can reach over SFTP, SSH or FTP, including
+            the cheapest plan with nothing on it to help you. One small file. No secrets in the repo.
+          </p>
+          <div class="install">
+            <span class="cmd"><span class="ps">$</span><span>{commands.init}</span></span>
+            <button type="button" data-copy={commands.init} aria-label={`Copy ${commands.init}`}>Copy</button>
+          </div>
+          <p class="fine">Free, MIT. One bundled file on npm, no install scripts, Node 24 or later.</p>
+        </div>
+      </section>
+
+      <section class="sec band-paper2" aria-labelledby="h-before">
+        <div class="wrap">
+          <div class="sec-head">
+            <span class="eyebrow">Before</span>
+            <h2 id="h-before">How it is today</h2>
+            <p class="lede">
+              You know this one. Nobody is laughing: it is how most client sites still get shipped, and
+              it has worked for years. It just costs you every time.
+            </p>
+          </div>
+          <div class="cols3">
+            <div class="stmt">
+              <span class="k">The upload</span>
+              <p>
+                It is 11 pm. FileZilla on the left, the build on the right. The transfer takes twenty
+                minutes, and you stay and watch it, because something always needs a retry.
+              </p>
+            </div>
+            <div class="stmt">
+              <span class="k">The script</span>
+              <p>
+                Or there is a script. It was written in an afternoon and it works. The FTP password is in
+                it, and the script is in git, next to the code, on everyone's laptop.
+              </p>
+            </div>
+            <div class="stmt">
+              <span class="k">The gap</span>
+              <p>
+                Between the first file and the last, the site is half old and half new. Someone is on it
+                right now. You hope they do not refresh.
+              </p>
+            </div>
+          </div>
+          <p class="coda">
+            None of this is a people problem. The tools were built for moving files, not for releasing a
+            site. sealup was built for the second thing, on the same hosting.
+          </p>
+        </div>
+      </section>
+
+      <section class="sec band-green" id="after" aria-labelledby="h-after">
+        <div class="wrap">
+          <div class="sec-head">
+            <span class="eyebrow">After</span>
+            <h2 id="h-after">How it could be</h2>
+            <p class="lede">
+              A push to main, or one command on your laptop. Only the files that changed go up, the old
+              ones sealup put there come down, and a visitor never gets a half-written file. Here is a
+              redeploy.
+            </p>
+          </div>
+
+          <div class="term" id="term">
+            <div class="term-bar">
+              <span>sealup deploy · {target}</span>
+              <button type="button" id="replay" aria-label="Replay the recording" hidden>replay</button>
+            </div>
+            <pre class="term-copy sr">{lastFrame}</pre>
+            <div
+              class="term-body out"
+              id="tb"
+              aria-hidden="true"
+              data-files={progressTotals.files}
+              data-mb={progressTotals.megabytes}
+            >
+              <span class="ln" data-s="0"><span class="ps">{'$ '}</span><span id="typed">{commands.deploy}</span><span class="cur off" id="cur"></span></span>
+              {
+                redeploy.map((line, index) =>
+                  index === progressAt ? (
+                    <OutputLine line={line} step={stepOf(index)} extra="slot">
+                      <span class="progress" id="progress">{'  '}<span class="b">↑</span>{' '}<span class="bar"><i id="fill"></i></span>{'   '}<span id="cnt"></span>{'   '}<span id="byt"></span>{'   '}<span class="d" id="sec"></span></span>
+                    </OutputLine>
+                  ) : (
+                    <OutputLine line={line} step={stepOf(index)} />
+                  ),
+                )
+              }
+            </div>
+          </div>
+
+          <div class="points">
+            <div class="pt">
+              <h3>Only changed files travel</h3>
+              <p>
+                A file list with sizes and SHA-256 stays on the server. A redeploy sends the files that
+                changed, not the whole build. About 2 seconds when nothing changed.
+              </p>
+            </div>
+            <div class="pt">
+              <h3>Never half-uploaded</h3>
+              <p>
+                A file that replaces one on the server goes up under a temporary name and is renamed
+                once it has fully arrived. Old files are deleted only after every upload is in.
+              </p>
+            </div>
+            <div class="pt">
+              <h3>No secrets in the repo</h3>
+              <p>
+                The password comes from the environment and is masked in CI. Over SFTP and SSH the
+                server's host key is pinned, so a run talks only to your server.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="sec" id="file" aria-labelledby="h-file">
+        <div class="wrap">
+          <div class="sec-head">
+            <span class="eyebrow">The file</span>
+            <h2 id="h-file">One small file.</h2>
+            <p class="lede">
+              <code>sealup.yml</code>, five lines, committed with the project. The password itself is not
+              in it: only the name of the variable that holds it.
+            </p>
+          </div>
+          <div class="two">
+            <div>
+              <div class="code">
+                <div class="head"><span>sealup.yml</span><span>5 lines · host key shortened</span></div>
+                <pre class="out">{yaml.map(({ key, value }) => <span class="ln"><span class="k">{key}</span>{': '}<span class={key === 'password' ? 's nb' : 'nb'}>{value}</span></span>)}</pre>
+              </div>
+              <p class="caption">
+                <code>{commands.init}</code> asks for the server URL and the password, shows the host key
+                (or certificate) to confirm, and writes the first four lines, a git-ignored
+                <code>sealup.env</code> and the GitHub workflow.
+              </p>
+            </div>
+            <div class="notes">
+              <div class="note">
+                <h3>Where it goes</h3>
+                <p>
+                  One URL, protocol first: <code>sftp://</code>, <code>ssh://</code>, <code>ftps://</code> or
+                  <code>ftp://</code>. User, host and folder on the same line.
+                </p>
+              </div>
+              <div class="note">
+                <h3>What stays out of git</h3>
+                <p>
+                  <code>{'${VAR}'}</code> is read from the environment: <code>sealup.env</code> on your
+                  machine, a repository secret in CI. The host key means a run talks only to your server.
+                </p>
+              </div>
+              <div class="note">
+                <h3>What goes up</h3>
+                <p>
+                  <code>upload: dist</code>: your build folder becomes the server folder. The
+                  <code>url</code> is printed under the success line and becomes the deployment link on GitHub.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="sec band-paper2" id="action" aria-labelledby="h-action">
+        <div class="wrap">
+          <div class="sec-head">
+            <span class="eyebrow">In GitHub Actions</span>
+            <h2 id="h-action">One step in the workflow you already have.</h2>
+            <p class="lede">
+              Add the sealup step after the build step of the workflow that runs on main, with the
+              password as a repository secret. Every successful build deploys, and the run ends on a
+              summary you can read without opening the log.
+            </p>
+          </div>
+          <div class="action-grid">
+            <div>
+              <p class="panel-label">The step you add</p>
+              <div class="code dark">
+                <div class="head"><span>.github/workflows/deploy.yml</span></div>
+                <pre class="out">{step.map((part) => <span class="ln">{part.lead}{part.key === undefined ? null : <span class="k">{part.key}</span>}{part.value}{part.comment === undefined ? null : <span class="c">{part.comment}</span>}</span>)}</pre>
+              </div>
+              <p class="steps-note">
+                <code>{commands.init}</code> writes this step for you, in a whole workflow: checkout,
+                install, build, deploy.
+              </p>
+            </div>
+            <div>
+              <p class="panel-label">The summary on the run</p>
+              <div class="summary" role="figure" aria-label="The job summary GitHub shows on the run page">
+                <div class="run"><span>deploy · summary</span><span class="ok">Succeeded</span></div>
+                <div class="body">
+                  <p class="title">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <circle class="disc" cx="12" cy="12" r="12"></circle>
+                      <path class="tick" d="M7 12.5l3.2 3.2L17 9" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></path>
+                    </svg>
+                    {title}
+                  </p>
+                  <table>
+                    <caption class="sr">Deployment target</caption>
+                    {
+                      targetRows.map(([name, value = '']) => (
+                        <tr>
+                          <th scope="row">{name}</th>
+                          <td>
+                            {inline(value).map((part) =>
+                              part.code ? (
+                                <code>{part.text}</code>
+                              ) : name === 'Site' ? (
+                                <span class="site">{part.text}</span>
+                              ) : (
+                                part.text
+                              ),
+                            )}
+                          </td>
+                        </tr>
+                      ))
+                    }
+                  </table>
+                  <table class="counts">
+                    <caption class="sr">Files by outcome</caption>
+                    <tr>
+                      <th scope="col"><span class="sr">What</span></th>
+                      {countHead.map((name) => <th scope="col">{name}</th>)}
+                    </tr>
+                    {
+                      countRows.map(([name, ...values]) => (
+                        <tr>
+                          <th scope="row">{name}</th>
+                          {values.map((cell) => <td>{cell}</td>)}
+                        </tr>
+                      ))
+                    }
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="sec" id="cli" aria-labelledby="h-cli">
+        <div class="wrap">
+          <div class="sec-head">
+            <span class="eyebrow">From your laptop</span>
+            <h2 id="h-cli">The same tool, the same words.</h2>
+            <p class="lede">
+              The Action runs the CLI in the same process. Three commands cover a project: set it up, look
+              at what a deploy would do, deploy.
+            </p>
+          </div>
+          <div class="cmds">
+            <div class="cmd-card">
+              <span class="n">01</span><span class="c">{commands.init}</span>
+              <p>
+                Asks for the server URL and the password, shows the server's host key (or certificate) so
+                you can confirm it, and writes <code>sealup.yml</code>, <code>sealup.env</code> and the
+                workflow.
+              </p>
+            </div>
+            <div class="cmd-card">
+              <span class="n">02</span><span class="c">{commands.dryRun}</span>
+              <p>
+                Shows the plan and changes nothing on the server. There is no confirmation prompt: this is
+                the review step.
+              </p>
+            </div>
+            <div class="cmd-card">
+              <span class="n">03</span><span class="c">{commands.deploy}</span>
+              <p>
+                Runs the plan and ends on the line you saw above. Exit 0 means done; any other code says
+                what stopped it and whether the server changed.
+              </p>
+            </div>
+          </div>
+          <div class="dry">
+            <div class="code">
+              <div class="head"><span>{commands.dryRun}</span><span>nothing changes</span></div>
+              <pre class="out"><span class="ln"><span class="ps">{'$ '}</span>{commands.dryRun}</span>{dryRun.map((line) => <OutputLine line={line} />)}</pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="sec band-green" id="everywhere" aria-labelledby="h-every">
+        <div class="wrap">
+          <div class="sec-head">
+            <span class="eyebrow">One tool</span>
+            <h2 id="h-every">Works everywhere.</h2>
+            <p class="lede">
+              Every host is a little different: the protocol, what is installed on the server, the machine
+              you deploy from. sealup is one tool for all of it, and nothing has to be installed on the
+              server.
+            </p>
+          </div>
+          <div class="matrix">
+            <div class="row">
+              <div class="sit">SFTP only, no shell<small>Most shared plans.</small></div>
+              <div class="what">The fast path: 64 requests in flight on one connection.</div>
+            </div>
+            <div class="row">
+              <div class="sit">SSH with a shell</div>
+              <div class="what">Changed files travel as one archive and are unpacked on the server.</div>
+            </div>
+            <div class="row">
+              <div class="sit">FTPS, or plain FTP</div>
+              <div class="what">Works, with a warning on every run over plain FTP.</div>
+            </div>
+            <div class="row">
+              <div class="sit">No rsync, no git on the server</div>
+              <div class="what">Nothing to install there. sealup only needs a login.</div>
+            </div>
+            <div class="row">
+              <div class="sit">A Windows laptop</div>
+              <div class="what">No rsync needed: one bundled file on Node 24 or later.</div>
+            </div>
+            <div class="row">
+              <div class="sit">GitHub Actions or your terminal</div>
+              <div class="what">The same tool, the same words, the same result.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="sec" id="speed" aria-labelledby="h-speed">
+        <div class="wrap">
+          <div class="sec-head">
+            <span class="eyebrow">Speed</span>
+            <h2 id="h-speed">Fast on cheap hosting.</h2>
+            <p class="lede">
+              On the shared host we measured, each request takes about 20 ms to come back. Sent one at a
+              time, a few thousand files take minutes. sealup keeps 64 requests in flight on a single SFTP
+              connection, so a cheap plan deploys like a bigger one.
+            </p>
+          </div>
+          <div class="speed">
+            <div>
+              <div class="figs">
+                <div class="fig">
+                  <div class="big">12<small>s</small></div>
+                  <p><b>First deploy.</b> About 6,000 files, 40 MB, over SFTP.</p>
+                </div>
+                <div class="fig">
+                  <div class="big">2<small>s</small></div>
+                  <p><b>Redeploy.</b> Nothing changed, so nothing travels. The file list on the server says so.</p>
+                </div>
+              </div>
+              <p class="method">Measured on OVH shared hosting in October 2026, with a PHP API and an Angular build.</p>
+            </div>
+            <div class="diagram" role="figure" aria-label="Two timelines: one request at a time against 64 requests in flight">
+              <div class="lane">
+                <div class="lane-h"><b>One request at a time</b><span>about 20 ms each · waits in between</span></div>
+                <svg viewBox="0 0 600 28" aria-hidden="true">
+                  <line class="track" x1="0" y1="14" x2="600" y2="14" stroke-width="2"></line>
+                  {[0, 96, 192, 288, 384, 480, 576].map((x) => <rect class="one" x={x} y="6" width="22" height="16" rx="3"></rect>)}
+                </svg>
+              </div>
+              <div class="lane">
+                <div class="lane-h"><b>sealup: many in flight, one connection</b><span>the waits overlap</span></div>
+                <svg viewBox="0 0 600 28" aria-hidden="true">
+                  <line class="track" x1="0" y1="14" x2="600" y2="14" stroke-width="2"></line>
+                  {Array.from({ length: 24 }, (_, i) => i * 25).map((x) => <rect class="many" x={x} y="6" width="22" height="16" rx="3"></rect>)}
+                </svg>
+              </div>
+              <p class="cap">
+                Schematic, not to scale. Same files, same server, one connection; only the number of
+                requests in flight changes.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="sec band-paper2" id="safe" aria-labelledby="h-safe">
+        <div class="wrap">
+          <div class="sec-head">
+            <span class="eyebrow">Safety</span>
+            <h2 id="h-safe">Safe by default.</h2>
+            <p class="lede">
+              None of this is a setting you have to find and turn on. The dry run is there when you want
+              it; the rest holds on every run, including the first.
+            </p>
+          </div>
+          <div class="safe">
+            <div class="row2">
+              <h3>Server identity pinned</h3>
+              <p>
+                Over SFTP and SSH the server's host key lives in <code>sealup.yml</code>, and a run connects
+                only to the server that shows it. Over FTPS the certificate is checked as a browser does,
+                or pinned the same way. A new or changed key is confirmed by a person, never in CI. Plain
+                FTP runs with a warning, every time.
+              </p>
+            </div>
+            <div class="row2">
+              <h3>Dry run</h3>
+              <p>
+                <code>{commands.dryRun}</code> lists every add, change and delete, and changes nothing on
+                the server.
+              </p>
+            </div>
+            <div class="row2">
+              <h3>Never a half-written file</h3>
+              <p>
+                An upload that replaces a file goes to a temporary name and is renamed once it has
+                arrived. Deletes run only
+                after the last upload is in.
+              </p>
+            </div>
+            <div class="row2">
+              <h3>Secrets never print</h3>
+              <p>Not in the terminal, not in the log. In CI they are masked before anything is written.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="close band-green" aria-labelledby="h-close">
+        <div class="wrap">
+          <h2 id="h-close">Seal it up, send it off.</h2>
+          <div class="install">
+            <span class="cmd"><span class="ps">$</span><span>{commands.init}</span></span>
+            <button type="button" data-copy={commands.init} aria-label={`Copy ${commands.init}`}>Copy</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="band-ink">
+      <div class="wrap">
+        <div class="top">
+          <a class="logo" href="/" aria-label="sealup, home">
+            <img src={wordmarkOnDark} alt="sealup" width="74" height="34" />
+          </a>
+          <nav aria-label="Footer">
+            <a href="/getting-started/">Docs</a>
+            <a href="https://github.com/sealup/sealup">GitHub</a>
+            <a href="https://www.npmjs.com/package/sealup">npm</a>
+          </nav>
+        </div>
+        <div class="bottom">
+          <span>Free and open source, MIT. No account, no paid plan.</span>
+          <span>{version}</span>
+        </div>
+      </div>
+    </footer>
+
+    <script>
+      // Copy buttons: the button keeps its width, so "Copied" never moves the page.
+      for (const button of document.querySelectorAll<HTMLButtonElement>('[data-copy]')) {
+        button.addEventListener('click', () => {
+          const text = button.dataset.copy ?? '';
+          const live = document.getElementById('live');
+          const say = (label: string, message: string, ms: number) => {
+            button.textContent = label;
+            if (live !== null) live.textContent = message;
+            setTimeout(() => {
+              button.textContent = 'Copy';
+            }, ms);
+          };
+          const fallback = () => {
+            const area = document.createElement('textarea');
+            area.value = text;
+            area.setAttribute('readonly', '');
+            area.style.position = 'fixed';
+            area.style.opacity = '0';
+            document.body.appendChild(area);
+            area.select();
+            let ok = false;
+            try {
+              ok = document.execCommand('copy');
+            } catch {}
+            area.remove();
+            if (ok) say('Copied', `Copied ${text} to the clipboard`, 1400);
+            else say('Copy failed', 'Copy failed. Select the command and copy it yourself.', 1800);
+          };
+          if (navigator.clipboard?.writeText !== undefined) {
+            navigator.clipboard.writeText(text).then(() => say('Copied', `Copied ${text} to the clipboard`, 1400), fallback);
+          } else {
+            fallback();
+          }
+        });
+      }
+
+      // The terminal replays the redeploy. The markup holds the last frame, as sealup leaves the
+      // screen; lines are hidden until their step, so the box never changes size. The progress line
+      // is drawn as sealup draws it (src/report/format.ts progressLine), over the blank line it
+      // leaves when the transfer ends.
+      const body = document.getElementById('tb');
+      const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (body !== null && !reduce) {
+        const $ = (id: string) => document.getElementById(id) as HTMLElement;
+        const lines = [...body.querySelectorAll<HTMLElement>('.ln')];
+        const typed = $('typed');
+        const cursor = $('cur');
+        const progress = $('progress');
+        const fill = $('fill');
+        const count = $('cnt');
+        const bytes = $('byt');
+        const seconds = $('sec');
+        const command = typed.textContent ?? '';
+        const files = Number(body.dataset.files);
+        const megabytes = Number(body.dataset.mb);
+        let run = 0;
+        const sleep = (ms: number) => new Promise((done) => setTimeout(done, ms));
+        const show = (step: number) => {
+          for (const line of lines) if (Number(line.dataset.s) === step) line.classList.remove('pend');
+        };
+        const draw = (fraction: number, elapsed: number) => {
+          const total = String(files);
+          const done = String(Math.round(fraction * files)).padStart(total.length);
+          const size = megabytes.toFixed(1);
+          fill.style.setProperty('--p', `${(fraction * 100).toFixed(1)}%`);
+          count.textContent = `${done} / ${total} files`;
+          bytes.textContent = `${(fraction * megabytes).toFixed(1).padStart(size.length)} / ${size} MB`;
+          seconds.textContent = `${(elapsed / 1000).toFixed(1).padStart(4)} s`;
+        };
+        const reset = () => {
+          for (const line of lines) if (Number(line.dataset.s) > 0) line.classList.add('pend');
+          typed.textContent = '';
+          cursor.classList.remove('off');
+          progress.classList.remove('on');
+          draw(0, 0);
+        };
+        const play = async () => {
+          const me = ++run;
+          const live = () => me === run;
+          reset();
+          await sleep(500);
+          for (let i = 0; i < command.length && live(); i++) {
+            typed.textContent = command.slice(0, i + 1);
+            await sleep(i === 6 ? 220 : 70);
+          }
+          if (!live()) return;
+          await sleep(500);
+          cursor.classList.add('off');
+          for (const [step, pause] of [
+            [1, 700],
+            [2, 900],
+            [3, 900],
+          ] as const) {
+            if (!live()) return;
+            show(step);
+            await sleep(pause);
+          }
+          if (!live()) return;
+          progress.classList.add('on');
+          const start = performance.now();
+          const length = 1800;
+          await new Promise<void>((done) => {
+            const tick = () => {
+              if (!live()) return done();
+              const elapsed = Math.min(length, performance.now() - start);
+              const t = elapsed / length;
+              draw(1 - (1 - t) ** 2, elapsed);
+              if (t < 1) requestAnimationFrame(tick);
+              else done();
+            };
+            tick();
+          });
+          if (!live()) return;
+          await sleep(500);
+          if (!live()) return;
+          progress.classList.remove('on');
+          show(5);
+        };
+        const replay = $('replay');
+        replay.addEventListener('click', () => void play());
+        replay.hidden = false;
+        reset();
+        const terminal = $('term');
+        if ('IntersectionObserver' in window) {
+          const observer = new IntersectionObserver(
+            (entries) => {
+              if (entries.some((entry) => entry.isIntersecting)) {
+                observer.disconnect();
+                void play();
+              }
+            },
+            { threshold: 0.45 },
+          );
+          observer.observe(terminal);
+        } else {
+          void play();
+        }
+      }
+    </script>
+  </body>
+</html>

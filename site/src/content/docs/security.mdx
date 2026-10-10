@@ -1,0 +1,92 @@
+---
+title: Security and how we ship
+description: What sealup protects, how each release is built and published, how to verify it, and the known limits.
+---
+
+import { Code } from '@astrojs/starlight/components';
+import release from '../../generated/release.json';
+
+sealup holds the logins of every site it deploys. This page sums up how it keeps them and your
+files safe, how a release reaches you, and how to check that what you run came from sealup's
+repository. The full policy, with how to report a flaw, is
+[SECURITY.md](https://github.com/sealup/sealup/blob/main/SECURITY.md).
+
+## Your logins
+
+- Secrets come only from environment variables: `${NAME}` in `sealup.yml`, `sealup.env` on your
+  computer, secrets in CI. A secret written in the config is refused
+  ([secret-in-config](/e/secret-in-config/)).
+- sealup never prints a secret, in any form: plain, base64, URL-encoded, JSON-escaped, hex, or
+  each line of a key. In GitHub Actions each one is masked before the first line of output.
+- No secret goes on a command line: there is no `--password` flag, and sealup starts no local
+  process or shell.
+- The server is checked before your login is sent: the host key over SFTP and SSH, the TLS
+  certificate over FTPS. FTPS never falls back to plain FTP.
+
+## Your files
+
+- sealup writes and deletes only inside the folder you gave it. Every path, from your config,
+  the server or sealup's own records, goes through one strict rule: no `..`, no absolute path,
+  no control character.
+- It never writes through a symlink on the server, and deletes never follow one.
+- It deletes only files it uploaded, unless you turn on [the full mirror](/mirror/), which
+  still never deletes excluded paths.
+- Each file arrives under a temporary name and is renamed into place, so visitors never see half
+  a file. [One deploy at a time](/lock/) per target.
+- A file written from a secret never touches your disk, gets mode `0600` before its first byte,
+  and is refused in a folder that looks served.
+
+## How a release is made
+
+1. Changes land on `main` after review and green checks. A release pull request collects them,
+   with the next version and its changelog.
+2. Merging it exports the code to the public repository as one commit, tagged `vX.Y.Z`. The
+   export copies an allow-list of paths and stops on any private name.
+3. On that tag, GitHub Actions runs the full checks on Linux and Windows, builds sealup, and
+   attests the npm package and the action's bundle (build provenance).
+4. The package is staged on npm through **trusted publishing**: no npm token exists anywhere.
+   It reaches npm, with provenance, once the maintainer approves it with 2FA.
+5. The GitHub release gets the npm tarball, `dist/action.mjs` and a `SHA256SUMS` file, and is
+   published **immutable**: its assets can never change.
+6. This site is built from the same tag, so it matches the release.
+
+The npm package is one bundled file with no runtime dependencies and no install scripts. In
+the repository, dependencies are pinned to exact versions, installed with `--ignore-scripts`,
+and updated by Dependabot only after 7 days. Every workflow pins its actions to full commit
+SHAs and is checked by actionlint, zizmor and a weekly OpenSSF Scorecard.
+
+## Verify a release
+
+For sealup {release.version}:
+
+<Code code={release.verify} lang="sh" />
+
+`npm audit signatures` checks the registry's signatures and provenance of every package your
+project installed, sealup included. The `gh` commands check the release, its tarball and the
+build attestations against sealup's repository. `sha256sum` checks the downloaded assets.
+
+## Known limits
+
+- **Plain FTP (`ftp://`) sends your password in clear,** and gives no way to check the server.
+  sealup warns on every such run. Use `ftps://` or `sftp://` where the host offers them.
+- **vsftpd gives coarse file dates.** Its listing's dates are to the minute (to the day for
+  older files): [`--check-server`](/check-server/) can miss a same-size edit within that window,
+  and `sealup pull` can take such a file for the one it already has.
+- **Anyone who can push a workflow can change what it does,** including sending secrets
+  elsewhere. Protect production with GitHub environments and branch rules.
+- **Isolation between accounts on a shared host is the host's job.** sealup cannot protect files
+  from another user or process on the same server.
+- **A pinned host key or certificate is only as good as your first check.** Compare the
+  fingerprint `sealup keyscan` shows with the one your host gives.
+
+## What you can do
+
+- Pin the action to a full commit SHA, as [`sealup init`](/init/) writes it (see
+  [the GitHub Action](/github-action/)).
+- Give each site its own deploy user, limited to the smallest folder it needs.
+- Prefer `sftp://` or `ssh://` with a [private key](/private-keys/) over FTP.
+- Keep production secrets in a GitHub environment, and make the server and host key `${NAME}`
+  references too, so a changed `sealup.yml` cannot send your password elsewhere.
+- Report a flaw privately through
+  [GitHub's security advisories](https://github.com/sealup/sealup/security/advisories/new),
+  never in a public issue.

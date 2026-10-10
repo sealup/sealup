@@ -1,0 +1,3 @@
+# Bites: a numbered OVH cluster host (a synthetic one), the form of a real shared-hosting server
+# Expect: ovh-cluster-host
+server: sftp://someone@ssh.cluster000.hosting.ovh.net/~/www

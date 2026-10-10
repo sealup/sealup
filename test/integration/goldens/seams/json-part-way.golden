@@ -1,0 +1,43 @@
+{
+  "format": 1,
+  "version": "0.0.0-source",
+  "command": "deploy",
+  "target": "production",
+  "server": "sftp://deploy@ssh.example.com:22/home/site",
+  "url": "https://example.com",
+  "dryRun": false,
+  "status": "partial",
+  "exitCode": 1,
+  "uploaded": 11,
+  "deleted": 0,
+  "unchanged": 30,
+  "bytes": 1689600,
+  "durationMs": 0,
+  "timings": {
+    "connect": 0,
+    "scan": 0,
+    "compare": 0,
+    "transfer": 0
+  },
+  "failed": [
+    {
+      "path": "www/main.4f2a9c1e.js",
+      "code": "quota"
+    },
+    {
+      "path": "www/polyfills.b7e2c4d9.js",
+      "code": "quota"
+    },
+    {
+      "path": "www/styles.2d8f1a6c.css",
+      "code": "quota"
+    }
+  ],
+  "error": {
+    "code": "quota-full",
+    "message": "Upload stopped: production is out of space.",
+    "fix": "ssh.example.com refused 3 files: no space left (quota full).\nwww/main.4f2a9c1e.js                                        412 KB\nwww/polyfills.b7e2c4d9.js                                    34 KB\nwww/styles.2d8f1a6c.css                                      88 KB\nFree space in your hosting panel (old backups, logs, mailboxes).",
+    "state": "production now has 11 of 14 new files. Run the same command again to finish.\nsealup recorded what arrived, so the rerun sends only the 3 missing files.\nThe 9 old files were kept: sealup deletes only after every upload is in.\nUntil then the site may serve a mix of old and new files."
+  },
+  "written": 0
+}

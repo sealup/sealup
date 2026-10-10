@@ -1,0 +1,19 @@
+# Bites: Scorecard uploading to code scanning, a write its row does not list (spec #41 decision 39)
+# Placed at: .github/workflows/scorecard.yml
+# Expect: permissions
+# Line: 17
+name: bad
+on:
+  schedule:
+    - cron: '23 5 * * 1'
+permissions:
+  contents: read
+jobs:
+  analysis:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      # code scanning is not in the table
+      security-events: write
+    steps:
+      - run: echo scored

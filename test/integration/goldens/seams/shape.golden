@@ -1,0 +1,765 @@
+// src/contracts/index.ts
+export { type RemotePath, type Secret, type ServerPath, type Sha256, shortestSecret, } from './brands.ts';
+export { type AllowedRisk, type ConfigExpected, type ConfigIssue, type ConfigPlace, type HostKey, isFtp, type Mapping, maxFtpConnections, type PullEntry, type SecretFile, type ServerUrl, type Target, type VariableSource, } from './config.ts';
+export type { EmptySource, FileRecord, KeptFile, ListedFile, LocalFile, LocalTree, Manifest, ManifestRead, MirrorListing, Plan, PlanBlock, PlanInput, PlanOp, ServerCheck, WriteRead, } from './plan.ts';
+export type { PullDownload, PullEvent, PullPlan, PullReporter } from './pull.ts';
+export { type CertificateReport, type CheckReport, type DeployEvent, ExitCode, type FailedOp, type HostKeyCheck, type KeyscanReport, type LockHolder, type MirroredPull, type Outcome, type PartialRun, type Problem, type Progress, type Reporter, type RunWarning, type TargetCheck, type Timings, type UnsafeName, type UploadCheck, } from './run.ts';
+export type { TransportReason } from './session.ts';
+export { type ArchiveFile, type ArchiveUpload, type Capabilities, type CertificateScan, type Connect, type HostKeyId, type ListResult, type PutOptions, type ReadResult, type ScanCertificate, type ScanHostKey, type ScannedHostKey, type ServerCertificate, type ServerEntry, type Session, type Source, type StatResult, TransportError, type TransportErrorCode, type TransportOperation, } from './session.ts';
+
+// src/contracts/brands.ts
+export type RemotePath = string & {
+    readonly __brand: 'RemotePath';
+};
+export type ServerPath = string & {
+    readonly __brand: 'ServerPath';
+};
+export interface Secret {
+    readonly envName: string;
+    toString(): string;
+    toJSON(): string;
+}
+export declare const shortestSecret = 6;
+export type Sha256 = string & {
+    readonly __brand: 'Sha256';
+};
+
+// src/contracts/session.ts
+import type { RemotePath, Secret, ServerPath } from './brands.ts';
+import type { ServerUrl, Target } from './config.ts';
+export interface Capabilities {
+    readonly replace: 'posix-rename' | 'unlink-then-rename';
+    readonly setMode: boolean;
+    readonly connections?: number;
+}
+export type Source = {
+    readonly file: string;
+} | {
+    readonly bytes: Uint8Array;
+} | {
+    readonly secret: Secret;
+};
+export interface PutOptions {
+    readonly mode?: number;
+}
+export type ReadResult = {
+    readonly kind: 'found';
+    readonly bytes: Uint8Array;
+    readonly mode: number;
+} | {
+    readonly kind: 'not-found';
+} | {
+    readonly kind: 'too-large';
+};
+export interface ServerEntry {
+    readonly name: string;
+    readonly kind: 'file' | 'folder' | 'link' | 'other';
+    readonly size: number;
+    readonly mtime: number;
+    readonly mode: number;
+}
+export interface StatResult {
+    readonly kind: ServerEntry['kind'] | 'not-found';
+}
+export type ListResult = {
+    readonly kind: 'found';
+    readonly entries: readonly ServerEntry[];
+} | {
+    readonly kind: 'not-found';
+} | {
+    readonly kind: 'too-many';
+};
+export interface Session {
+    readonly caps: Capabilities;
+    readonly loginFolder: ServerPath;
+    put(source: Source, to: ServerPath, options?: PutOptions): Promise<void>;
+    rename(from: ServerPath, to: ServerPath): Promise<void>;
+    remove(path: ServerPath): Promise<boolean>;
+    mkdir(path: ServerPath): Promise<boolean>;
+    rmdir(path: ServerPath): Promise<boolean>;
+    stat(path: ServerPath): Promise<StatResult>;
+    read(path: ServerPath, maxBytes: number): Promise<ReadResult>;
+    list(folder: ServerPath, maxEntries: number): Promise<ListResult>;
+    get(from: ServerPath, to: string, size: number): Promise<void>;
+    close(): Promise<void>;
+    readonly certificate?: ServerCertificate;
+    readonly archive?: ArchiveUpload;
+}
+export interface ArchiveFile {
+    readonly path: RemotePath;
+    readonly file: string;
+    readonly size: number;
+}
+interface ArchiveOptions {
+    readonly onSent: (sent: {
+        readonly files: number;
+        readonly bytes: number;
+    }) => void;
+    readonly signal: AbortSignal | undefined;
+}
+export interface ArchiveUpload {
+    send(root: ServerPath, files: readonly ArchiveFile[], options: ArchiveOptions): Promise<void>;
+}
+export type TransportErrorCode = 'auth' | 'host-key' | 'unreachable' | 'not-found' | 'permission' | 'quota' | 'connection-lost' | 'timeout' | 'protocol' | 'private-key' | 'tls';
+export interface ServerCertificate {
+    readonly subject: string;
+    readonly issuer: string;
+    readonly validFrom: string;
+    readonly validTo: string;
+    readonly sha256: string;
+}
+export interface HostKeyId {
+    readonly type: string;
+    readonly fingerprint: string;
+}
+export type TransportReason = 'key-unreadable' | 'passphrase-missing' | 'passphrase-wrong' | 'no-host-key' | 'other-key' | 'login-refused' | 'tls-refused' | 'certificate-untrusted' | 'certificate-name' | 'certificate-other' | 'refused' | 'no-such-host' | 'no-route' | 'closed' | 'broken' | 'handshake' | 'speaks-ftp' | 'interrupted' | 'no-answer' | 'not-ssh' | 'no-sftp' | 'not-ftp' | 'mode-refused' | 'no-login-folder' | 'lost' | 'answer' | 'in-the-way' | 'changed';
+export type TransportOperation = 'upload' | 'rename' | 'delete' | 'mkdir' | 'rmdir' | 'read' | 'look' | 'list' | 'download';
+interface TransportFacts extends ErrorOptions {
+    readonly received?: HostKeyId;
+    readonly path?: ServerPath;
+    readonly operation?: TransportOperation;
+    readonly timeoutMs?: number;
+    readonly serverSaid?: string;
+    readonly inTheWay?: 'file' | 'folder';
+    readonly certificate?: ServerCertificate;
+}
+export declare class TransportError extends Error {
+    readonly name = "TransportError";
+    readonly code: TransportErrorCode;
+    readonly reason: TransportReason;
+    readonly received: HostKeyId | undefined;
+    readonly path: ServerPath | undefined;
+    readonly operation: TransportOperation | undefined;
+    readonly timeoutMs: number | undefined;
+    readonly serverSaid: string | undefined;
+    readonly inTheWay: 'file' | 'folder' | undefined;
+    readonly certificate: ServerCertificate | undefined;
+    constructor(code: TransportErrorCode, reason: TransportReason, facts?: TransportFacts);
+}
+export type Connect = (target: Target, options: {
+    readonly signal: AbortSignal | undefined;
+}) => Promise<Session>;
+export interface ScannedHostKey extends HostKeyId {
+    readonly line: string;
+}
+interface ScanOptions {
+    readonly signal: AbortSignal | undefined;
+    readonly timeoutMs: number;
+    readonly type?: string;
+}
+export type ScanHostKey = (server: ServerUrl, options: ScanOptions) => Promise<ScannedHostKey>;
+export interface CertificateScan {
+    readonly certificate: ServerCertificate;
+    readonly check: 'trusted' | 'untrusted' | 'other-name';
+}
+export type ScanCertificate = (server: ServerUrl, options: Omit<ScanOptions, 'type'>) => Promise<CertificateScan>;
+export {};
+
+// src/contracts/config.ts
+import type { RemotePath, Secret } from './brands.ts';
+export interface ServerUrl {
+    readonly protocol: 'sftp' | 'ssh' | 'ftp' | 'ftps';
+    readonly user: string;
+    readonly host: string;
+    readonly port: number;
+    readonly folder: string;
+}
+export interface HostKey {
+    readonly type: string;
+    readonly key: string;
+    readonly fingerprint: string;
+}
+export interface Mapping {
+    readonly kind: 'folder' | 'file';
+    readonly local: string;
+    readonly remote: RemotePath | '';
+    readonly localFromConfig: string;
+    readonly place: ConfigPlace;
+    readonly mirror?: true;
+}
+export interface SecretFile {
+    readonly path: RemotePath;
+    readonly secret: Secret;
+    readonly mode: number;
+    readonly allowPublic: boolean;
+    readonly place: ConfigPlace;
+}
+export interface PullEntry {
+    readonly remote: RemotePath | '';
+    readonly local: string;
+    readonly localFromConfig: string;
+    readonly place: ConfigPlace;
+}
+export type AllowedRisk = 'empty-source' | 'symlinks' | 'root-folder';
+interface TargetPlaces {
+    readonly server: ConfigPlace;
+    readonly password?: ConfigPlace;
+    readonly privateKey?: ConfigPlace;
+    readonly passphrase?: ConfigPlace;
+    readonly hostKey: ConfigPlace | undefined;
+    readonly tlsFingerprint?: ConfigPlace;
+}
+export interface Target {
+    readonly name: string;
+    readonly server: ServerUrl;
+    readonly password?: Secret;
+    readonly privateKey?: Secret;
+    readonly passphrase?: Secret;
+    readonly hostKey: HostKey | undefined;
+    readonly tlsFingerprint?: string;
+    readonly url: string | undefined;
+    readonly uploads: readonly Mapping[];
+    readonly writes: readonly SecretFile[];
+    readonly pulls: readonly PullEntry[];
+    readonly exclude: readonly string[];
+    readonly parallel: number;
+    readonly timeoutMs: number;
+    readonly manifestFolder: string;
+    readonly allow: ReadonlySet<AllowedRisk>;
+    readonly checkServer: boolean;
+    readonly places: TargetPlaces;
+}
+export interface VariableSource {
+    readonly name: string;
+    readonly from: 'environment' | 'env-file';
+}
+export interface ConfigPlace {
+    readonly file: string;
+    readonly line?: number;
+    readonly keyPath: string;
+}
+export interface ConfigIssue extends ConfigPlace {
+    readonly code: 'file-not-found' | 'file-ambiguous' | 'env-file-not-found' | 'yaml' | 'unknown-key' | 'missing-key' | 'wrong-type' | 'shorthand-with-targets' | 'no-targets' | 'variable-syntax' | 'server-url' | 'host-key' | 'site-url' | 'bad-path' | 'remote-path' | 'secret-in-config' | 'variable-not-set' | 'secret-refused' | 'excluded-file' | 'same-server-path' | 'login' | 'not-available-yet';
+    readonly searchedUpTo?: string;
+    readonly variable?: string;
+    readonly reason?: 'too-short' | 'unsafe-character';
+    readonly message?: string;
+    readonly envFile?: string;
+    readonly expected?: ConfigExpected;
+    readonly other?: ConfigPlace;
+    readonly path?: string;
+    readonly detail?: string;
+}
+export declare const maxFtpConnections = 16;
+export declare function isFtp(protocol: ServerUrl['protocol']): boolean;
+export type ConfigExpected = 'mapping' | 'text' | 'count' | 'connections' | 'fingerprint' | 'duration' | 'upload' | 'upload-entry' | 'targets' | 'target' | 'target-name' | 'allow' | 'patterns' | 'write' | 'write-entry' | 'mode' | 'yes-no' | 'pull';
+export {};
+
+// src/contracts/plan.ts
+import type { RemotePath, ServerPath, Sha256 } from './brands.ts';
+import type { AllowedRisk, Mapping } from './config.ts';
+export interface LocalFile {
+    readonly abs: string;
+    readonly size: number;
+    readonly sha256: Sha256;
+}
+export type LocalTree = ReadonlyMap<RemotePath, LocalFile>;
+export interface FileRecord {
+    readonly size: number;
+    readonly sha256: Sha256;
+}
+export interface Manifest {
+    readonly format: 2;
+    readonly folder: ServerPath;
+    readonly files: ReadonlyMap<RemotePath, FileRecord>;
+    readonly pending: readonly RemotePath[];
+}
+export type ManifestProblem = 'unreadable' | 'invalid' | 'too-large';
+export type ManifestRead = {
+    readonly kind: 'found';
+    readonly manifest: Manifest;
+} | {
+    readonly kind: 'absent';
+} | {
+    readonly kind: 'unusable';
+    readonly reason: ManifestProblem;
+};
+export interface EmptySource {
+    readonly mapping: Mapping;
+    readonly missing: boolean;
+}
+export interface PlanInput {
+    readonly local: LocalTree;
+    readonly remote: ManifestRead & {
+        readonly kind: 'found' | 'absent';
+    };
+    readonly uploads: readonly Mapping[];
+    readonly exclude: readonly string[];
+    readonly emptySources: readonly EmptySource[];
+    readonly allow: ReadonlySet<AllowedRisk>;
+    readonly writes?: readonly WriteRead[];
+    readonly server?: ServerCheck;
+    readonly skipped?: readonly string[];
+    readonly linked?: ReadonlySet<RemotePath>;
+    readonly mirror?: MirrorListing;
+}
+export interface MirrorListing {
+    readonly files: ReadonlySet<RemotePath>;
+    readonly folders: ReadonlySet<RemotePath>;
+    readonly links: ReadonlySet<RemotePath>;
+    readonly held: ReadonlySet<RemotePath>;
+}
+export interface ServerCheck {
+    readonly files: ReadonlyMap<RemotePath, ListedFile>;
+    readonly manifestMtime: number | undefined;
+}
+export interface ListedFile {
+    readonly size: number;
+    readonly mtime: number;
+}
+export interface WriteRead {
+    readonly path: RemotePath;
+    readonly from: string;
+    readonly found: 'same' | 'different' | 'absent';
+}
+export type PlanOp = {
+    readonly op: 'mkdir';
+    readonly path: RemotePath;
+} | {
+    readonly op: 'upload';
+    readonly path: RemotePath;
+    readonly reason: 'new' | 'changed' | 'changed-on-server';
+    readonly size: number;
+    readonly sha256: Sha256;
+} | {
+    readonly op: 'write';
+    readonly path: RemotePath;
+    readonly reason: 'new' | 'changed';
+    readonly from: string;
+} | {
+    readonly op: 'delete';
+    readonly path: RemotePath;
+    readonly reason: 'left-build' | 'not-in-build';
+} | {
+    readonly op: 'rmdir';
+    readonly path: RemotePath;
+};
+export interface KeptFile {
+    readonly path: RemotePath;
+    readonly reason: 'excluded' | 'link';
+}
+export interface Plan {
+    readonly ops: readonly PlanOp[];
+    readonly unchanged: number;
+    readonly unchangedBytes: number;
+    readonly bytes: number;
+    readonly kept: readonly KeptFile[];
+    readonly skipped: readonly string[];
+    readonly firstDeploy: boolean;
+    readonly blocked?: PlanBlock;
+}
+export type PlanBlock = {
+    readonly reason: 'empty-source';
+    readonly source: EmptySource;
+} | {
+    readonly reason: 'in-the-way';
+    readonly path: RemotePath;
+    readonly found: 'file' | 'folder';
+};
+
+// src/contracts/run.ts
+import type { RemotePath, ServerPath } from './brands.ts';
+import type { ConfigIssue, ConfigPlace, PullEntry, ServerUrl, Target, VariableSource } from './config.ts';
+import type { ManifestProblem, Plan } from './plan.ts';
+import type { CertificateScan, HostKeyId, ScannedHostKey, ServerCertificate, TransportError, TransportErrorCode } from './session.ts';
+export type Problem = {
+    readonly code: 'usage';
+    readonly reason: 'no-command' | 'unknown-command' | 'extra-arguments' | 'unknown-flag' | 'missing-value' | 'quiet-and-verbose' | 'json-not-taken' | 'unknown-topic' | 'outside-workspace' | 'no-workspace' | 'not-true-or-false' | 'bad-server-address' | 'not-sam-sync' | 'from-and-server' | 'flag-not-taken';
+    readonly name?: string;
+    readonly count?: number;
+    readonly suggestion?: string;
+    readonly command?: string;
+} | {
+    readonly code: 'not-available-yet';
+    readonly what: string;
+} | {
+    readonly code: 'no-terminal';
+    readonly deploymentJson: boolean;
+} | {
+    readonly code: 'config-exists';
+    readonly file: string;
+} | {
+    readonly code: 'config';
+    readonly issues: readonly ConfigIssue[];
+    readonly target?: string;
+} | {
+    readonly code: 'unknown-target';
+    readonly name: string;
+    readonly names: readonly string[];
+    readonly suggestion?: string;
+    readonly configFile: string;
+    readonly command?: string;
+} | {
+    readonly code: 'target-not-named';
+    readonly names: readonly string[];
+    readonly configFile: string;
+    readonly command?: string;
+} | {
+    readonly code: 'host-key-missing';
+    readonly configFile: string;
+} | {
+    readonly code: 'private-key-unreadable';
+    readonly reason: 'key-unreadable' | 'passphrase-missing' | 'passphrase-wrong';
+    readonly target: string;
+} | {
+    readonly code: 'host-key-not-replaced';
+    readonly target: string;
+    readonly server: ServerUrl;
+    readonly configFile: string;
+    readonly expected: HostKeyId;
+    readonly place: ConfigPlace;
+    readonly received: ScannedHostKey;
+    readonly asked: boolean;
+} | {
+    readonly code: 'certificate-not-replaced';
+    readonly target: string;
+    readonly server: ServerUrl;
+    readonly configFile: string;
+    readonly expected: string;
+    readonly place: ConfigPlace;
+    readonly received: ServerCertificate;
+    readonly asked: boolean;
+} | {
+    readonly code: 'empty-source';
+    readonly folder: string;
+    readonly missing: boolean;
+    readonly serverFolder: string;
+    readonly target: string;
+    readonly place: ConfigPlace;
+} | {
+    readonly code: 'manifest-inside-target';
+    readonly manifestFolder: string;
+    readonly targetFolder: string;
+    readonly serverFolder: string;
+    readonly place: ConfigPlace;
+    readonly connected: boolean;
+    readonly loginFolderInside?: boolean;
+    readonly target: string;
+} | {
+    readonly code: 'symlink';
+    readonly on: 'source' | 'server';
+    readonly path: string;
+    readonly target: string;
+} | {
+    readonly code: 'secret-file-public';
+    readonly path: string;
+    readonly folder: string;
+    readonly place: ConfigPlace;
+    readonly target: string;
+    readonly reason?: 'mode-refused';
+} | {
+    readonly code: 'risky-folder';
+    readonly folder: string;
+    readonly connected: boolean;
+    readonly mirror?: ConfigPlace;
+    readonly mirrored?: readonly string[];
+    readonly target: string;
+} | {
+    readonly code: 'manifest-unusable';
+    readonly reason: ManifestProblem;
+} | {
+    readonly code: 'lock-held';
+    readonly target: string;
+    readonly lock: ServerPath;
+    readonly holder?: LockHolder;
+} | {
+    readonly code: 'pull-in-ci';
+    readonly target?: string;
+} | {
+    readonly code: 'no-pull-entries';
+    readonly target: string;
+    readonly configFile: string;
+} | {
+    readonly code: 'pull-unsafe-name';
+    readonly path: string;
+    readonly reason: UnsafeName;
+    readonly target: string;
+} | {
+    readonly code: 'pull-local-path';
+    readonly path: string;
+    readonly found: 'link' | 'file' | 'folder' | 'other';
+    readonly needs: 'file' | 'folder';
+    readonly target: string;
+} | {
+    readonly code: 'pull-too-large';
+    readonly path: ServerPath;
+    readonly limit: 'entries' | 'files' | 'depth';
+    readonly max: number;
+    readonly target: string;
+} | {
+    readonly code: 'listing-too-large';
+    readonly path: ServerPath;
+    readonly limit: 'entries' | 'depth';
+    readonly max: number;
+    readonly for: 'check-server' | 'mirror';
+    readonly target: string;
+} | {
+    readonly code: 'pull-part-way';
+    readonly error?: Error;
+    readonly downloaded: number;
+    readonly downloads: number;
+    readonly target: string;
+} | ({
+    readonly code: 'transport';
+    readonly error: TransportError;
+} & StopState) | {
+    readonly code: 'bad-local-name';
+    readonly path: string;
+    readonly reason: 'control-character' | 'backslash' | 'drive-letter' | 'other';
+    readonly target: string;
+} | ({
+    readonly code: 'in-the-way';
+    readonly path: ServerPath;
+    readonly found: 'file' | 'folder';
+    readonly held: 'excluded' | 'not-uploaded';
+} & StopState) | {
+    readonly code: 'cancelled';
+    readonly picker: boolean;
+} | ({
+    readonly code: 'interrupted';
+} & StopState) | ({
+    readonly code: 'unexpected';
+    readonly error: Error;
+} & StopState<boolean | undefined>);
+export type UnsafeName = 'dot-name' | 'slash' | 'backslash' | 'control-character' | 'not-nfc' | 'windows-character' | 'windows-reserved' | 'trailing-dot-space' | 'too-long' | 'sealup-temp';
+export interface LockHolder {
+    readonly run: string;
+    readonly started: number;
+    readonly refreshed: number;
+    readonly machine: string;
+    readonly ciRun?: string;
+}
+interface StopState<Changed = boolean> {
+    readonly changed: Changed;
+    readonly run?: PartialRun;
+}
+export interface PartialRun {
+    readonly uploads: number;
+    readonly arrived: number;
+    readonly missing: readonly {
+        readonly path: RemotePath;
+        readonly size: number;
+    }[];
+    readonly refused: number;
+    readonly writes: number;
+    readonly written: number;
+    readonly deletes: number;
+    readonly deleted: number;
+    readonly recorded: boolean;
+}
+export interface Timings {
+    readonly connect: number;
+    readonly scan: number;
+    readonly compare: number;
+    readonly transfer: number;
+    readonly reconnect?: number;
+}
+export interface Outcome {
+    readonly status: 'ok' | 'unchanged' | 'partial' | 'failed' | 'cancelled';
+    readonly exitCode: ExitCode;
+    readonly uploaded: number;
+    readonly written: number;
+    readonly deleted: number;
+    readonly unchanged: number;
+    readonly downloaded?: number;
+    readonly bytes: number;
+    readonly durationMs: number;
+    readonly timings: Timings;
+    readonly problem?: Problem;
+    readonly failed?: readonly FailedOp[];
+    readonly reconnects?: number;
+}
+export interface FailedOp {
+    readonly path: RemotePath;
+    readonly code: TransportErrorCode;
+}
+export type HostKeyCheck = {
+    readonly state: 'verified';
+    readonly fingerprint: string;
+} | {
+    readonly state: 'missing';
+} | {
+    readonly state: 'changed';
+    readonly received: HostKeyId;
+} | {
+    readonly state: 'not-checked';
+} | {
+    readonly state: 'none';
+} | {
+    readonly state: 'certificate';
+    readonly certificate: ServerCertificate;
+    readonly check: 'verified' | 'pinned' | 'refused';
+};
+export interface RunWarning {
+    readonly code: 'plain-ftp';
+}
+export interface Progress {
+    readonly files: number;
+    readonly totalFiles: number;
+    readonly bytes: number;
+    readonly totalBytes: number;
+    readonly elapsedMs: number;
+    readonly transferMs: number;
+}
+export type DeployEvent = {
+    readonly type: 'start';
+    readonly target: Target;
+    readonly configFile: string;
+    readonly dryRun: boolean;
+    readonly warnings: readonly RunWarning[];
+} | ({
+    readonly type: 'host-key';
+} & HostKeyCheck) | {
+    readonly type: 'transfer';
+    readonly via: 'archive' | 'file-by-file';
+    readonly reason?: 'login-folder';
+} | {
+    readonly type: 'pool';
+    readonly connections: number;
+} | {
+    readonly type: 'lock';
+    readonly stale: boolean;
+    readonly holder?: LockHolder;
+    readonly silentMs?: number;
+} | {
+    readonly type: 'plan';
+    readonly plan: Plan;
+} | ({
+    readonly type: 'progress';
+} & Progress) | {
+    readonly type: 'reconnecting';
+    readonly attempt: number;
+    readonly attempts: number;
+    readonly code: TransportErrorCode;
+    readonly files: number;
+    readonly totalFiles: number;
+} | {
+    readonly type: 'reconnected';
+    readonly attempt: number;
+    readonly filesLeft: number;
+} | {
+    readonly type: 'done';
+    readonly outcome: Outcome;
+};
+export interface Reporter {
+    on(event: DeployEvent): void;
+}
+export interface UploadCheck {
+    readonly local: string;
+    readonly kind: 'folder' | 'file';
+    readonly files: number;
+}
+export interface TargetCheck {
+    readonly name: string;
+    readonly target?: Target;
+    readonly problem?: Problem;
+    readonly exitCode: ExitCode;
+    readonly variables: readonly VariableSource[];
+    readonly hostKey: 'saved' | 'missing' | 'unknown' | 'none';
+    readonly login?: 'password' | 'private-key';
+    readonly uploads?: readonly UploadCheck[];
+    readonly mirroredPulls?: readonly MirroredPull[];
+}
+export interface MirroredPull {
+    readonly pull: PullEntry;
+    readonly exclude: string;
+}
+export interface CheckReport {
+    readonly configFile: string;
+    readonly envFile: string;
+    readonly named: boolean;
+    readonly targets: readonly TargetCheck[];
+    readonly exitCode: ExitCode;
+}
+export interface KeyscanReport {
+    readonly configFile: string;
+    readonly target: string;
+    readonly server: ServerUrl;
+    readonly shown: ScannedHostKey;
+    readonly saved?: {
+        readonly key: HostKeyId;
+        readonly place: ConfigPlace;
+    };
+    readonly state: 'not-saved' | 'same' | 'other';
+}
+export interface CertificateReport {
+    readonly configFile: string;
+    readonly target: string;
+    readonly server: ServerUrl;
+    readonly shown: CertificateScan;
+    readonly saved?: {
+        readonly sha256: string;
+        readonly place: ConfigPlace;
+    };
+    readonly state: 'trusted' | 'not-saved' | 'same' | 'other';
+}
+export declare const ExitCode: {
+    readonly ok: 0;
+    readonly partial: 1;
+    readonly usage: 2;
+    readonly auth: 3;
+    readonly hostKey: 4;
+    readonly unreachable: 5;
+    readonly safetyNet: 6;
+    readonly interrupted: 130;
+};
+export type ExitCode = (typeof ExitCode)[keyof typeof ExitCode];
+export {};
+
+// src/contracts/pull.ts
+import type { ServerPath } from './brands.ts';
+import type { PullEntry, Target } from './config.ts';
+import type { HostKeyCheck, Outcome, Progress, RunWarning } from './run.ts';
+export interface PullDownload {
+    readonly from: ServerPath;
+    readonly to: string;
+    readonly size: number;
+    readonly mtime: number;
+    readonly reason: 'new' | 'replace';
+}
+export interface PullPlan {
+    readonly entries: readonly PullEntry[];
+    readonly downloads: readonly PullDownload[];
+    readonly unchanged: number;
+    readonly bytes: number;
+    readonly links: number;
+    readonly special: number;
+}
+export type PullEvent = {
+    readonly type: 'start';
+    readonly target: Target;
+    readonly configFile: string;
+    readonly dryRun: boolean;
+    readonly warnings: readonly RunWarning[];
+} | ({
+    readonly type: 'host-key';
+} & HostKeyCheck) | {
+    readonly type: 'plan';
+    readonly plan: PullPlan;
+} | ({
+    readonly type: 'progress';
+} & Progress) | {
+    readonly type: 'done';
+    readonly outcome: Outcome;
+};
+export interface PullReporter {
+    on(event: PullEvent): void;
+}
+
+// src/plan/index.ts
+import type { AllowedRisk, ConfigIssue, ConfigPlace, EmptySource, Mapping, Plan, PlanBlock, PlanInput, RemotePath, SecretFile } from '../contracts/index.ts';
+export declare function plan(input: PlanInput): Plan;
+export declare function emptySourceBlock(emptySources: readonly EmptySource[], allow: ReadonlySet<AllowedRisk>): Extract<PlanBlock, {
+    reason: 'empty-source';
+}> | undefined;
+export declare function publicWrite(targetFolder: string, writes: readonly SecretFile[]): {
+    readonly file: SecretFile;
+    readonly folder: string;
+    readonly path: string;
+} | undefined;
+export declare function excludedOnServer(mappings: readonly Mapping[], patterns: readonly string[]): (path: RemotePath, folder?: boolean) => boolean;
+export interface SentPath {
+    readonly path: RemotePath;
+    readonly place: ConfigPlace;
+}
+export declare function sameServerPath(sent: Iterable<SentPath>): ConfigIssue | undefined;

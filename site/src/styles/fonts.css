@@ -1,0 +1,14 @@
+/*
+ * Self-hosted fonts (decision 0036): the files ship with the site, so a page makes no request to
+ * another host. The type pair is landing round 4's, recorded by decision 0037: Outfit for
+ * headings, Onest for text, IBM Plex Mono for code (600 for the home's small labels).
+ * Latin only: the site is English (0036).
+ */
+@import '@fontsource/onest/latin-400.css';
+@import '@fontsource/onest/latin-500.css';
+@import '@fontsource/onest/latin-600.css';
+@import '@fontsource/outfit/latin-600.css';
+@import '@fontsource/outfit/latin-700.css';
+@import '@fontsource/ibm-plex-mono/latin-400.css';
+@import '@fontsource/ibm-plex-mono/latin-500.css';
+@import '@fontsource/ibm-plex-mono/latin-600.css';

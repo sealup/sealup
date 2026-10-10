@@ -1,0 +1,10 @@
+# Astro's build output and its generated types
+dist/
+.astro/
+
+# generated from ../schema.json at each build (scripts/config-page.ts)
+src/content/docs/config.md
+
+# the release facts, written at each build (scripts/release-page.ts): the action step and the
+# verify commands of the version built
+src/generated/

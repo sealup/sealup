@@ -1,0 +1,21 @@
+# Bites: a write the write table does not list, in a job it lists (spec #41 decision 37)
+# Placed at: .github/workflows/release.yml
+# Expect: permissions
+# Line: 19
+name: bad
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      # packages is not in the table
+      packages: write
+    steps:
+      - run: echo released

@@ -1,0 +1,107 @@
+# The action's self-test (decision 0014; spec #24 decision 36): runs the action itself
+# (`uses: ./`, the committed dist/action.mjs) against a test server, then checks what it did.
+# Linux deploys to the e2e OpenSSH image (built and run in a step: service containers can't
+# build), Windows and macOS to the in-process SFTP server, started in the background. In the
+# public repo, macOS runs on push to main and by hand only; the private repo, whose minutes are
+# counted, runs Linux only (ruling 10).
+#
+# Each job: a dry run, a deploy of a single file and a write entry, a redeploy (unchanged), then
+# scripts/self-test.ts checks the outputs, the plan file, a job summary, the server's tree and
+# that no canary leaked. The password and the write secret are canaries made in the job: no
+# repository secret.
+#
+# Hardening (0017, R26), as CI: actions pinned to full commit SHAs, the token reads contents
+# only, no pull_request_target, checkout keeps no credentials.
+
+name: Self-test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: self-test-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  action:
+    name: action (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: >-
+          ${{ fromJSON(github.repository == 'sealup/sealup-private'
+          && '["ubuntu-latest"]'
+          || github.event_name == 'pull_request'
+          && '["ubuntu-latest", "windows-latest"]'
+          || '["ubuntu-latest", "windows-latest", "macos-latest"]') }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+
+      # The scripts' SFTP client and the in-process server need ssh2. No install script runs
+      # (R25).
+      - name: Install
+        run: npm ci --ignore-scripts
+
+      # Masked before anything else, then in GITHUB_ENV for the later steps.
+      - name: Canary secrets
+        run: node scripts/self-test.ts canaries
+
+      - name: Test server (OpenSSH container)
+        if: runner.os == 'Linux'
+        run: node scripts/self-test.ts docker-server
+
+      - name: Test server (in process, in the background)
+        if: runner.os != 'Linux'
+        run: |
+          nohup node scripts/self-test.ts server > "$RUNNER_TEMP/self-test-server.log" 2>&1 &
+          node scripts/self-test.ts wait-server
+
+      - name: Project
+        run: node scripts/self-test.ts project
+
+      - name: Dry run
+        id: dry
+        uses: ./ # zizmor: ignore[self-repository] actionlint 1.7.12 refuses $/ ("ref is missing"); this tests the checked-out action
+        with:
+          target: selftest
+          dry-run: true
+          working-directory: selftest-project
+
+      - name: Deploy
+        id: deploy
+        uses: ./ # zizmor: ignore[self-repository] actionlint 1.7.12 refuses $/ ("ref is missing"); this tests the checked-out action
+        with:
+          target: selftest
+          working-directory: selftest-project
+
+      - name: Redeploy (unchanged)
+        id: again
+        uses: ./ # zizmor: ignore[self-repository] actionlint 1.7.12 refuses $/ ("ref is missing"); this tests the checked-out action
+        with:
+          target: selftest
+          working-directory: selftest-project
+
+      - name: Check outputs, plan, summary, server tree, leaks
+        env:
+          DRY: ${{ toJSON(steps.dry.outputs) }}
+          DEPLOY: ${{ toJSON(steps.deploy.outputs) }}
+          AGAIN: ${{ toJSON(steps.again.outputs) }}
+        run: node scripts/self-test.ts check

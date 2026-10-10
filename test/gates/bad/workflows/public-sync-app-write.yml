@@ -1,0 +1,24 @@
+# Bites: a GitHub App token asking a write the App-token table does not list (spec #41 decision 37)
+# Placed at: .github/workflows/public-sync.yml
+# Expect: permissions
+# Line: 23
+name: bad
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    environment: public-sync
+    steps:
+      - name: App token
+        id: app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.PUBLIC_SYNC_CLIENT_ID }}
+          private-key: ${{ secrets.PUBLIC_SYNC_APP_KEY }}
+          permission-contents: write
+          permission-administration: write
+      - run: echo pushed

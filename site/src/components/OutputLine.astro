@@ -1,0 +1,28 @@
+---
+// One line of sealup's output on the home page, from a golden line (src/home/samples.ts): its
+// colour tokens as classes, a fingerprint a phone can shorten, and a size column kept at the
+// right. Every character comes from an expression, so the build's HTML compression never
+// touches the line's spaces.
+import { columns, segments } from '../home/lines.ts';
+
+interface Props {
+  readonly line: string;
+  /** The terminal's step that shows the line. */
+  readonly step?: number;
+  /** More classes for the line. */
+  readonly extra?: string;
+}
+
+const { line, step, extra } = Astro.props;
+const cols = columns(line);
+const cls = ['ln', line === '' ? 'blank' : '', cols === undefined ? '' : 'cols', extra ?? '']
+  .filter((name) => name !== '')
+  .join(' ');
+const parts = (text: string) =>
+  segments(text).map((segment) => ({
+    text: segment.text,
+    cls: [segment.style ?? '', segment.short === true ? 'fp' : ''].filter((n) => n !== '').join(' '),
+  }));
+const left = parts(cols === undefined ? line : cols.left);
+---
+<span class={cls} data-s={step}>{cols === undefined ? left.map((p) => (p.cls === '' ? p.text : <span class={p.cls}>{p.text}</span>)) : <><span class="left">{left.map((p) => (p.cls === '' ? p.text : <span class={p.cls}>{p.text}</span>))}</span><span class="right">{cols.right}</span></>}<slot /></span>

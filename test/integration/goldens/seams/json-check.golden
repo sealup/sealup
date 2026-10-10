@@ -1,0 +1,22 @@
+{
+  "format": 1,
+  "version": "0.0.0-source",
+  "command": "check",
+  "target": null,
+  "status": "ok",
+  "exitCode": 0,
+  "targets": [
+    {
+      "name": "production",
+      "ready": true,
+      "missing": []
+    },
+    {
+      "name": "staging",
+      "ready": false,
+      "missing": [
+        "STAGING_KEY"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+# The sealup action (decision 0014; spec #24 decisions 33, 34): the same code as the CLI, in the
+# same process, from the committed bundle (nothing downloaded at run time). Secrets go through
+# the step's env:, never through inputs: sealup.yml reads them as ${NAME}.
+
+name: sealup
+description: Fast, safe deploys to shared hosting over SFTP, SSH or FTP.
+author: sealup
+
+# For the Marketplace listing at 1.0 (0006, 0017; spec #41 decision 39): the seal's rising arrow,
+# in GitHub's nearest colour to the brand's wax green.
+branding:
+  icon: arrow-up-circle
+  color: green
+
+inputs:
+  target:
+    description: 'Target name. Needed when sealup.yml has several targets: CI never shows a picker.'
+    required: false
+    default: ''
+  config:
+    description: 'Path to sealup.yml. Empty: search from working-directory up to the repo root.'
+    required: false
+    default: ''
+  dry-run:
+    description: Show every change, change nothing. Writes the plan JSON and sets status to dry-run.
+    required: false
+    default: 'false'
+  working-directory:
+    description: 'Folder to run in: where the search for sealup.yml starts.'
+    required: false
+    default: '.'
+
+outputs:
+  status:
+    description: deployed, unchanged, dry-run, partial, failed, blocked (a safety net, exit 6) or cancelled (exit 130). The step fails on partial, failed, blocked and cancelled.
+  url:
+    description: The target's url from sealup.yml. Use it for environment.url.
+  uploaded:
+    description: Files uploaded (or that would be, on a dry run).
+  deleted:
+    description: Files deleted (or that would be, on a dry run).
+  unchanged:
+    description: Files already up to date.
+  bytes:
+    description: Bytes uploaded.
+  duration:
+    description: Whole run, in seconds.
+  plan:
+    description: Path to the plan JSON. Set on a dry run only.
+
+runs:
+  using: node24
+  main: dist/action.mjs

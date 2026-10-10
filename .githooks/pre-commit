@@ -1,0 +1,5 @@
+#!/bin/sh
+# Every code gate before a commit (budget 15 s, decision 0013). Enable once per clone with
+# `npm run setup` (sets core.hooksPath to .githooks). It checks the working tree, not only the
+# staged files.
+exec node scripts/check.ts

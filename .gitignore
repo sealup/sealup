@@ -1,0 +1,18 @@
+node_modules/
+
+# the owner's names list for the public export (decision 0035): client names and other projects,
+# names only, never committed
+.private-names
+
+# other worktrees of this repo, each with its own checkout
+.worktrees/
+
+# image generation logs
+docs/exploration/assets/*/gen/logs/
+
+docs/exploration/assets/*/gen/*.png
+
+# build output (scripts/build.ts), but the action's bundle, which is committed (spec #24
+# decision 35; check-dist compares it with a fresh build in CI)
+dist/*
+!dist/action.mjs

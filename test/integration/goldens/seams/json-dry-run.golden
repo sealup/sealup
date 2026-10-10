@@ -1,0 +1,67 @@
+{
+  "format": 1,
+  "version": "0.0.0-source",
+  "command": "deploy",
+  "target": "production",
+  "server": "sftp://deploy@ssh.example.com:22/home/site",
+  "url": "https://example.com",
+  "dryRun": true,
+  "status": "ok",
+  "exitCode": 0,
+  "uploaded": 4,
+  "deleted": 2,
+  "unchanged": 1001,
+  "bytes": 434176,
+  "durationMs": 2000,
+  "timings": {
+    "connect": 0,
+    "scan": 0,
+    "compare": 0,
+    "transfer": 0
+  },
+  "ops": [
+    {
+      "op": "upload",
+      "path": "www/admin/main.1b7e9f30.js",
+      "reason": "new",
+      "size": 3072
+    },
+    {
+      "op": "upload",
+      "path": "www/main.4f2a9c1e.js",
+      "reason": "new",
+      "size": 421888
+    },
+    {
+      "op": "upload",
+      "path": "api/routes/api.php",
+      "reason": "changed",
+      "size": 5120
+    },
+    {
+      "op": "upload",
+      "path": "www/index.html",
+      "reason": "changed",
+      "size": 4096
+    },
+    {
+      "op": "delete",
+      "path": "www/admin/main.93c5b8e0.js",
+      "reason": "left-build",
+      "size": null
+    },
+    {
+      "op": "delete",
+      "path": "www/main.8b1e3d07.js",
+      "reason": "left-build",
+      "size": null
+    },
+    {
+      "op": "keep",
+      "path": "www/robots.txt",
+      "reason": "excluded",
+      "size": null
+    }
+  ],
+  "written": 0
+}

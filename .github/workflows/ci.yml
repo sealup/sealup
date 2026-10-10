@@ -1,0 +1,334 @@
+# CI (decisions 0010, 0011, 0013, 0016, 0017; spec #1 Phase 0 gates). Budget: 3 minutes.
+#
+# Hardening (0017, R26): actions pinned to full commit SHAs (the tag is in the comment), the token
+# reads contents only, no pull_request_target, checkout keeps no credentials. Checked here by
+# actionlint and zizmor, and in `npm run check` by scripts/check-workflows.ts.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  check:
+    name: check (${{ matrix.os }}, Node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      # Linux and Windows, Node 24 and 26, in the public repo; Linux and Node 24 in the private
+      # one, whose minutes are counted (ruling 10). release.yml's checks keep the full matrix.
+      matrix:
+        os: >-
+          ${{ fromJSON(github.repository == 'sealup/sealup-private'
+          && '["ubuntu-latest"]'
+          || '["ubuntu-latest", "windows-latest"]') }}
+        node: >-
+          ${{ fromJSON(github.repository == 'sealup/sealup-private'
+          && '["24"]'
+          || '["24", "26"]') }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+
+      # No install script runs in CI (R25); esbuild works without its own.
+      - name: Install
+        run: npm ci --ignore-scripts
+
+      # Type check, Biome, import rules, knip, unit and integration tests (proven-to-bite and
+      # leak tests included).
+      - name: Gates
+        run: npm run check
+
+      # The committed action bundle is what a fresh build makes, byte for byte, on Linux and
+      # Windows alike (0011, spec #24 decision 35). Before the Build step, which rewrites dist/.
+      - name: Committed action bundle (check-dist)
+        run: node scripts/check-dist.ts action.mjs
+
+      # Fails on a bundled licence outside the allow-list (0016).
+      - name: Build
+        run: npm run build
+
+      - name: Bundle budgets
+        run: npm run budget
+
+      - name: Package contents
+        run: |
+          npm pack --dry-run --json > "$RUNNER_TEMP/pack.json"
+          node scripts/check-package.ts --pack "$RUNNER_TEMP/pack.json"
+
+  # Deploys to an OpenSSH container (test/e2e/openssh/Dockerfile, base pinned by digest) and
+  # verifies the server's tree; extracts the tar packer's archive with GNU tar and busybox tar in
+  # containers (test/e2e/tar.test.ts, images pinned by digest). Its own job, on Linux only (Docker on the Windows runners runs
+  # Windows containers), so it runs beside the check matrix instead of lengthening it
+  # (spec #15 decision 6).
+  e2e:
+    name: end-to-end (ubuntu-latest, Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      # Node 24 and 26 in the public repo, Node 24 in the private one (ruling 10).
+      matrix:
+        node: >-
+          ${{ fromJSON(github.repository == 'sealup/sealup-private'
+          && '["24"]'
+          || '["24", "26"]') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+
+      # No install script runs in CI (R25); esbuild works without its own.
+      - name: Install
+        run: npm ci --ignore-scripts
+
+      - name: End-to-end tests
+        run: npm run test:e2e
+
+  # The FTP servers shared hosts run, each in a container (test/e2e/ftp/Dockerfile, base pinned by
+  # digest): the Session contract suite over FTPS on Pure-FTPd, ProFTPD and vsftpd; sealup deploy,
+  # redeploy and pull over vsftpd; R8's and R9's cases (spec #41 decision 17). Its own job, so the
+  # OpenSSH job above stays under its 180 s.
+  e2e-ftp:
+    name: end-to-end FTP (ubuntu-latest, Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      # Node 24 and 26 in the public repo, Node 24 in the private one (ruling 10).
+      matrix:
+        node: >-
+          ${{ fromJSON(github.repository == 'sealup/sealup-private'
+          && '["24"]'
+          || '["24", "26"]') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+
+      # No install script runs in CI (R25); esbuild works without its own.
+      - name: Install
+        run: npm ci --ignore-scripts
+
+      - name: End-to-end tests against the FTP servers
+        run: npm run test:e2e-ftp
+
+  # The docs site (decision 0036, spec sealup/sealup#41 decision 42): its own package in site/,
+  # outside the root gates and the CLI bundle. Its tests prove each check bites (a missing page, a
+  # broken link, a page wider than 375 px); the checks then run on the real build. The width check
+  # opens the pages in the runner's Chrome: no browser is downloaded.
+  site:
+    name: docs site (build, links, 375 px)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+
+      # No install script runs in CI (R25); esbuild works without its own.
+      - name: Install
+        run: npm ci --ignore-scripts
+
+      - name: Site checks, proven to bite
+        run: npm test
+
+      # Writes the config page from schema.json, then builds.
+      - name: Build
+        run: npm run build
+
+      - name: Every CLI link has a page, no broken link, no sideways scroll at 375 px
+        run: npm run check
+
+  # The release, rehearsed with nothing published (spec #41 decisions 35, 36): the public export
+  # (without the owner's names list, which only the release has), its commit and tag pushed into
+  # a local bare repo, the public repo's gates on a clone of it, then release.yml's build and
+  # asset steps as they are (a test holds them equal), with this commit's SHA standing in for the
+  # release commit's.
+  #
+  # In the private repo, whose minutes are counted (ruling 10), it stops after asking the export
+  # whether the change touches the public tree: a change to docs/, test/private/, AGENTS.md or
+  # the private workflows leaves the exported tree, and so this job's outcome, as it was. The
+  # public repo runs it whole.
+  release-dry-run:
+    name: release dry run (export, public commit and checks, release build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      # A pull request's merge commit against its base; a push against the commit before it (an
+      # unknown one, as on a force push, counts as public). Node alone: nothing installed yet.
+      - name: Does the change touch the public tree?
+        id: scope
+        if: github.repository == 'sealup/sealup-private'
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && 'HEAD^1' || github.event.before }}
+        run: |
+          touches=$(node scripts/export-public.ts --touches "$BASE")
+          echo "public=$touches" >> "$GITHUB_OUTPUT"
+          if [ "$touches" = false ]; then
+            echo "No public file changed: the release dry run is skipped." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      # No install script runs in CI (R25); esbuild works without its own.
+      - name: Install
+        if: steps.scope.outputs.public != 'false'
+        run: npm ci --ignore-scripts
+
+      - name: Export the public tree
+        if: steps.scope.outputs.public != 'false'
+        run: node scripts/export-public.ts "$RUNNER_TEMP/public"
+
+      - name: Public commit and tag, into a local repo
+        if: steps.scope.outputs.public != 'false'
+        run: |
+          git init --bare --quiet --initial-branch=main "$RUNNER_TEMP/public.git"
+          node scripts/public-sync.ts "$RUNNER_TEMP/public" --remote "$RUNNER_TEMP/public.git" --author "sealup dry run <dry-run@example.com>" --push
+
+      # The public tree must pass its own gates without the private files (test/private/ and
+      # what it reads stay out), or release.yml's checks would stop the release.
+      - name: The public repo's checks
+        if: steps.scope.outputs.public != 'false'
+        run: |
+          git clone --quiet "$RUNNER_TEMP/public.git" "$RUNNER_TEMP/public-clone"
+          cd "$RUNNER_TEMP/public-clone"
+          npm ci --ignore-scripts
+          npm run check
+
+      - name: Release build
+        if: steps.scope.outputs.public != 'false'
+        run: node scripts/build.ts --release-sha "$GITHUB_SHA"
+
+      - name: Release assets
+        if: steps.scope.outputs.public != 'false'
+        run: node scripts/release-assets.ts "$RUNNER_TEMP/release" --sha "$GITHUB_SHA" --notes "$RUNNER_TEMP/notes.md"
+
+      - name: Release notes
+        if: steps.scope.outputs.public != 'false'
+        run: cat "$RUNNER_TEMP/notes.md" >> "$GITHUB_STEP_SUMMARY"
+
+  workflows:
+    name: workflows (actionlint, zizmor)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install actionlint 1.7.12 (checksum verified)
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/actionlint.tar.gz" \
+            https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
+
+      - name: actionlint
+        run: '"$RUNNER_TEMP/actionlint" -color'
+
+      # Proven to bite: actionlint must fail on the bad workflows.
+      - name: actionlint fails the bad workflows
+        run: |
+          if "$RUNNER_TEMP/actionlint" -color test/gates/bad/workflows/*.yml; then
+            echo "::error::actionlint passed the bad workflows in test/gates/bad/workflows"
+            exit 1
+          fi
+
+      - name: zizmor
+        uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
+        with:
+          version: 1.30.1
+          advanced-security: false
+          annotations: true
+
+      # Proven to bite: zizmor must fail on the bad workflows.
+      - name: zizmor on the bad workflows
+        id: zizmor-bad
+        continue-on-error: true
+        uses: zizmorcore/zizmor-action@cc914d7f3750a2d13d75c7f184a1060aa0e9d482 # v0.6.4
+        with:
+          version: 1.30.1
+          advanced-security: false
+          online-audits: false
+          inputs: >-
+            test/gates/bad/workflows/unpinned.yml
+            test/gates/bad/workflows/pull-request-target.yml
+            test/gates/bad/workflows/write-permissions.yml
+            test/gates/bad/workflows/no-permissions.yml
+            test/gates/bad/workflows/template-injection.yml
+            test/gates/bad/workflows/release-unlisted-write.yml
+            test/gates/bad/workflows/release-wrong-job.yml
+            test/gates/bad/workflows/release-top-level-write.yml
+            test/gates/bad/workflows/release-flow-write.yml
+            test/gates/bad/workflows/scorecard-security-events.yml
+            test/gates/bad/workflows/public-sync-app-write.yml
+
+      - name: zizmor fails the bad workflows
+        if: steps.zizmor-bad.outcome != 'failure'
+        run: |
+          echo "::error::zizmor passed the bad workflows in test/gates/bad/workflows"
+          exit 1
+
+  needs-your-look:
+    name: needs your look
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+
+      # Lists changed protected files and deleted test files in the job summary (story 63).
+      - name: Protected files and deleted tests
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: node scripts/needs-your-look.ts "origin/$BASE_REF" HEAD

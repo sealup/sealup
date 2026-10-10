@@ -1,0 +1,78 @@
+{
+  "name": "sealup",
+  "version": "0.1.0",
+  "description": "Fast, safe deploys to shared hosting over SFTP, SSH or FTP.",
+  "keywords": [
+    "deploy",
+    "deployment",
+    "sftp",
+    "ssh",
+    "ftp",
+    "ftps",
+    "shared-hosting",
+    "github-actions",
+    "cli",
+    "ovh"
+  ],
+  "homepage": "https://sealup.dev",
+  "bugs": {
+    "url": "https://github.com/sealup/sealup/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sealup/sealup.git"
+  },
+  "license": "MIT",
+  "author": "Samuel Asensi",
+  "type": "module",
+  "bin": {
+    "sealup": "dist/cli.mjs"
+  },
+  "files": [
+    "dist/cli.mjs",
+    "dist/THIRD_PARTY_LICENSES.txt",
+    "schema.json"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "setup": "git config core.hooksPath .githooks",
+    "check": "node scripts/check.ts",
+    "typecheck": "node scripts/check.ts typecheck",
+    "lint": "node scripts/check.ts lint",
+    "imports": "node scripts/check.ts imports",
+    "knip": "node scripts/check.ts knip",
+    "test": "vitest run",
+    "test:unit": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "test:e2e": "vitest run --project e2e",
+    "test:e2e-ftp": "vitest run --project e2e-ftp",
+    "build": "node scripts/build.ts",
+    "schema": "node scripts/schema.ts",
+    "budget": "node scripts/budget.ts"
+  },
+  "allowScripts": {
+    "cpu-features@0.0.10": false,
+    "esbuild@0.28.2": true,
+    "ssh2@1.17.0": false
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.15",
+    "@types/node": "24.19.1",
+    "@types/ssh2": "1.15.6",
+    "basic-ftp": "6.2.2",
+    "esbuild": "0.28.2",
+    "knip": "6.40.0",
+    "ssh2": "1.17.0",
+    "typescript": "7.0.2",
+    "vitest": "5.0.3",
+    "yaml": "2.9.1",
+    "zod": "4.6.5"
+  },
+  "overrides": {
+    "@types/ssh2": {
+      "@types/node": "$@types/node"
+    }
+  }
+}

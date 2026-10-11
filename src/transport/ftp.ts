@@ -109,8 +109,12 @@ export const connectFtp = async (
   const waitMs = Math.min(extraConnectionWaitMs, Math.max(0, deadline - Date.now()));
   const others = openOthers(library, dial, wanted, waitMs);
   try {
+    // The login folder and the probe are part of the connect: each command gets the connect's
+    // bound, never less than `timeout`, so a short `timeout` over a slow link still connects.
+    commandTimeout(first.link.client, Math.max(handshakeTimeoutMs, target.timeoutMs));
     const loginFolder = await loginFolderOf(first.link.client);
     const caps = await probe(first.link.client, loginFolder);
+    commandTimeout(first.link.client, target.timeoutMs);
     const links = [first.link, ...(await others)];
     return createFtpSession(links, {
       loginFolder,
@@ -186,12 +190,17 @@ async function openLink(
     const mlst = features.has('MLST');
     if (mlst) await client.sendIgnoringError('OPTS MLST type;size;modify;UNIX.mode;');
     // Logged in: each command now has the target's own timeout.
-    (client.ftp as { timeout: number }).timeout = dial.timeoutMs;
+    commandTimeout(client, dial.timeoutMs);
     return { link, mlst, certificate };
   };
   return bounded(client, work, boundMs, signal, (error) =>
     connectFailure(error, library, step, boundMs, certificate),
   );
+}
+
+/** How long each later command of `client` may wait for its reply. */
+function commandTimeout(client: Client, ms: number): void {
+  (client.ftp as { timeout: number }).timeout = ms;
 }
 
 /** Dials and reads the greeting; a first chunk that is no FTP reply fails it (not-ftp). */

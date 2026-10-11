@@ -5,10 +5,10 @@
 // the server refuses leaves its share to the others; one stream's failure fails the archive and
 // closes every channel. A small archive stays one stream.
 
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { ArchiveFile, RemotePath, ServerPath, Session } from '../../src/contracts/index.ts';
 import { joinServer } from '../../src/paths/index.ts';
 import { createSftpServer, type SftpServer } from '../../src/testkit/index.ts';
@@ -19,16 +19,36 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
 });
 
-/** `count` small local files, `f<i>.txt` under a folder each tenth, holding their own name. */
-function localFiles(count: number): ArchiveFile[] {
-  const local = mkdtempSync(join(tmpdir(), 'sealup archive streams '));
-  cleanups.push(() => rmSync(local, { recursive: true, force: true }));
-  return Array.from({ length: count }, (_, i) => {
+// The local files, written once for every test (no test changes them) and read back once here.
+// The first open of a file just written is the slow one: on a loaded Windows machine with a
+// real-time antivirus, 1,000 fresh files took 15 to 22 s to open, the same files again 1 s.
+// Written per test, every test paid that within its own timeout.
+let local = '';
+let written: ArchiveFile[] = [];
+beforeAll(() => {
+  local = mkdtempSync(join(tmpdir(), 'sealup archive streams '));
+  written = Array.from({ length: 1_000 }, (_, i) => {
     const path = `d${i % 10}/f${i}.txt`;
     const file = join(local, `${i}.txt`);
     writeFileSync(file, path);
     return { path: path as RemotePath, file, size: Buffer.byteLength(path) };
   });
+  for (const { file } of written) readFileSync(file);
+});
+afterAll(() => rmSync(local, { recursive: true, force: true }));
+
+/**
+ * The fewest files the archive spreads over four streams (200 a stream; the first test holds the
+ * four commands). A stream packs its files one after the other, each a few round trips to the
+ * disk, and on a loaded machine each round trip waits its turn for the CPU: one stream of 1,000
+ * files took 22 to 30 s there. Tests that need four streams but not the count use this.
+ */
+const fourStreams = 601;
+
+/** `count` small local files, `f<i>.txt` under a folder each tenth, holding their own name. */
+function localFiles(count: number): ArchiveFile[] {
+  if (count > written.length) throw new RangeError(`only ${written.length} local files`);
+  return written.slice(0, count);
 }
 
 async function setUp(
@@ -75,8 +95,10 @@ describe('the SSH archive over several streams', () => {
     expect(archives).toHaveLength(4);
     for (const names of archives) expect(names.length).toBeGreaterThan(0);
     expect(archives.flat().sort()).toEqual(files.map((file) => file.path).sort());
+    // Read once: each files() sorts the whole tree (a thousand calls took 2.5 s on a quiet machine).
+    const tree = server.files();
     for (const file of files) {
-      const held = server.files().get(`${root}/${file.path}`);
+      const held = tree.get(`${root}/${file.path}`);
       expect(new TextDecoder().decode(held?.bytes)).toBe(file.path);
     }
     // Progress: one call per file, counting up to every file and byte.
@@ -97,15 +119,16 @@ describe('the SSH archive over several streams', () => {
   });
 
   it('sends every file over the channels it gets when the server refuses the others', async () => {
-    // Two SFTP channels and the probe's come first: one more is all this host allows.
+    // Two SFTP channels and the probe's come first: two more is all this host allows, so two of
+    // the four streams are refused.
     const { server, session, root } = await setUp(30_000, (server) =>
-      server.faults.refuseChannelsBeyond(4),
+      server.faults.refuseChannelsBeyond(5),
     );
-    const files = localFiles(1_000);
+    const files = localFiles(fourStreams);
 
     await session.archive?.send(root, files, { onSent: () => {}, signal: undefined });
 
-    expect(server.archives()).toHaveLength(1);
+    expect(tarCommands(server)).toHaveLength(2);
     expect(server.archives().flat().sort()).toEqual(files.map((file) => file.path).sort());
   });
 
@@ -114,7 +137,7 @@ describe('the SSH archive over several streams', () => {
     server.faults.failArchive();
 
     await expect(
-      session.archive?.send(root, localFiles(1_000), { onSent: () => {}, signal: undefined }),
+      session.archive?.send(root, localFiles(fourStreams), { onSent: () => {}, signal: undefined }),
     ).rejects.toMatchObject({ name: 'TransportError', code: 'quota' });
     expect(await execsClosed(server)).toBe(0);
   });

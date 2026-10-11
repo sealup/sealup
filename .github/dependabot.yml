@@ -1,6 +1,7 @@
 # Dependabot (R25, decision 0010; spec #41 decision 39): npm and the Actions pins, each in one
 # grouped PR a week, proposing a version only once it has been public for 7 days. Security
 # updates skip the cooldown. Every PR runs the full CI: the gates, the bundle check and budgets.
+# `@types/node` majors are left out (see below).
 
 version: 2
 updates:
@@ -13,6 +14,11 @@ updates:
     groups:
       npm:
         patterns: ['*']
+    # Node's types follow the oldest Node sealup supports (package.json's engines, Node 24): a
+    # newer major would type APIs that Node 24 lacks. Raise it with engines, by hand.
+    ignore:
+      - dependency-name: '@types/node'
+        update-types: ['version-update:semver-major']
     commit-message:
       prefix: chore
       include: scope

@@ -276,10 +276,11 @@ export function getFaultContract(open: Open<FaultyContractServer>): void {
     });
 
     it('a download slower than the timeout fails with timeout, leaving nothing here', async () => {
-      const { server, at } = await open();
+      const { server, session: seeding, at } = await open();
+      // Put by the session with the usual timeout: 50 ms is the download's bound, not the put's.
+      await seeding.put(text('x'), at('a.txt'));
       const session = await server.connect({ timeoutMs: 50 });
       try {
-        await session.put(text('x'), at('a.txt'));
         server.faults.slow(5_000);
         const folder = localFolder();
         await expectCode(session.get(at('a.txt'), join(folder, 'a.txt'), 1), 'timeout');

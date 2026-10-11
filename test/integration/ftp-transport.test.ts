@@ -247,6 +247,22 @@ describe('the pool (decision 4)', () => {
   });
 });
 
+// `timeout` bounds each command once the session is open, not the connect: over a slow link (or
+// on a loaded machine) the login, the login folder and the probe take longer than a short one,
+// as on SFTP. The connect has its own bound (`timeout`, never under 10 s).
+describe('timeout and the connect', () => {
+  it('logs in and probes over a link slower than a short `timeout`, then times out a slow command', async () => {
+    const server = await testFtpServer();
+    server.faults.slow(100);
+    const session = await testFtpSession(ftpTarget(server, { timeoutMs: 50 }));
+    expect(session.caps).toMatchObject({ replace: 'posix-rename', setMode: true });
+    server.faults.slow(5_000);
+    await expect(session.put(text('x'), at(session, 'a.txt'))).rejects.toMatchObject({
+      code: 'timeout',
+    });
+  });
+});
+
 describe('connect failures', () => {
   it('says the port does not speak FTP when an SSH server answers', async () => {
     const ssh = await silentServer('SSH-2.0-OpenSSH_9.6\r\n');

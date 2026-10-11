@@ -1,6 +1,7 @@
 # The release (decision 0017; spec #41 decision 36), public: runs on the tag vX.Y.Z that the
 # private public-sync pushes with the release commit (a tag ruleset lets only that GitHub App and
-# the admins push v* tags). It runs the full checks, then, in the environment `npm`:
+# the admins push v* tags). It runs the full checks and the end-to-end tests (SFTP and SSH, then
+# the FTP servers), then, in the environment `npm`:
 #   1. builds with the release commit's SHA (init's workflow pins the action to it, decision 38);
 #   2. makes the assets (scripts/release-assets.ts): the npm tarball, dist/action.mjs, SHA256SUMS
 #      and the notes; CI's release dry run runs the same two steps on each pull request;
@@ -84,9 +85,35 @@ jobs:
       - name: End-to-end tests
         run: npm run test:e2e
 
+  # CI's FTP end-to-end matrix in the public repo (a test holds them equal): Pure-FTPd, ProFTPD
+  # and vsftpd in containers.
+  e2e-ftp:
+    name: end-to-end FTP (ubuntu-latest, Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: true
+      matrix:
+        node: ['24', '26']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: ${{ matrix.node }}
+          package-manager-cache: false
+
+      - name: Install
+        run: npm ci --ignore-scripts
+
+      - name: End-to-end tests against the FTP servers
+        run: npm run test:e2e-ftp
+
   release:
     name: release
-    needs: [checks, e2e]
+    needs: [checks, e2e, e2e-ftp]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: npm

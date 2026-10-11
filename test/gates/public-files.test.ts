@@ -17,6 +17,10 @@ interface Update {
   readonly schedule: { readonly interval: string };
   readonly cooldown?: { readonly 'default-days'?: number };
   readonly groups?: Record<string, { readonly patterns?: readonly string[] }>;
+  readonly ignore?: readonly {
+    readonly 'dependency-name': string;
+    readonly 'update-types'?: readonly string[];
+  }[];
 }
 
 describe('Dependabot (R25)', () => {
@@ -30,6 +34,22 @@ describe('Dependabot (R25)', () => {
       const groups = Object.values(update.groups ?? {});
       expect(groups.map((group) => group.patterns)).toEqual([['*']]);
     }
+  });
+
+  // Node's types follow the oldest Node sealup supports (engines), not the newest: a major bump
+  // would let the code use APIs that Node 24 lacks, with every check still green.
+  it("keeps @types/node on the oldest supported Node's major", () => {
+    const pkg = JSON.parse(read('package.json')) as {
+      engines: { node: string };
+      devDependencies: Record<string, string>;
+    };
+    const oldest = /^>=(\d+)$/.exec(pkg.engines.node)?.[1];
+    expect(pkg.devDependencies['@types/node']?.split('.')[0]).toBe(oldest);
+    const npm = updates.find((u) => u['package-ecosystem'] === 'npm');
+    expect(npm?.ignore).toContainEqual({
+      'dependency-name': '@types/node',
+      'update-types': ['version-update:semver-major'],
+    });
   });
 });
 

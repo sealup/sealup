@@ -1,9 +1,10 @@
 // Smoke tests on the built bundle (spec #1, seam 2): the one file users run works on its own,
 // from a folder with no node_modules, under the leak-test harness (canaries in its environment):
 // --version, --help, and a dry run against the in-process SFTP server over the real transport;
-// a file written from a secret whose bytes never touch the local disk (R17).
+// a file written from a secret whose bytes never touch the local disk (R17); and the packed
+// tarball installed by npm, run as users run it: `sealup`, through the bin shim npm writes.
 
-import { exec } from 'node:child_process';
+import { type ExecFileException, exec, execFile } from 'node:child_process';
 import {
   cpSync,
   mkdirSync,
@@ -29,7 +30,7 @@ import {
   splitMasks,
   userKey,
 } from '../../src/testkit/index.ts';
-import { runCli, runWithCanaries, startCli } from '../cli-kit.ts';
+import { type CliRun, runCli, runWithCanaries, startCli } from '../cli-kit.ts';
 import { createProject, hostKeyLine, newProject, ref } from '../deploy-kit.ts';
 import { silentServer } from '../sftp-kit.ts';
 
@@ -59,6 +60,10 @@ describe('the cli bundle', () => {
     await build({ outdir });
   });
   afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+  /** The package's tarball, packed in `root` once for the tests that need it. */
+  let tarball: Promise<string> | undefined;
+  const packed = (): Promise<string> => (tarball ??= npmPack(root));
 
   it('prints the package version for --version, from a folder with no node_modules', async () => {
     const run = await runCli([join(outdir, 'cli.mjs'), '--version'], { cwd: outdir });
@@ -377,12 +382,36 @@ describe('the cli bundle', () => {
   // committed bundle. Proven on the two layouts users run: the npm tarball, unpacked as npm
   // installs it, and the action's checkout (action.yml, package.json, dist/action.mjs).
   it('says the version from the packed tarball: --version', async () => {
-    const tarball = await npmPack(root);
+    const tarball = await packed();
     const installed = join(root, 'installed');
     unpackTarball(join(root, tarball), installed);
     const cli = join(installed, 'package', 'dist', 'cli.mjs');
     const run = await runCli([cli, '--version'], { cwd: installed });
     expect(run).toEqual({ exitCode: 0, stdout: `${packageVersion}\n`, stderr: '' });
+  });
+
+  // npm's bin shims run the file itself, not `node <file>`: on Linux and macOS the link in
+  // node_modules/.bin is executed, so the shell reads the file unless its first line names Node;
+  // on Windows sealup.cmd calls `node` only when it finds that line, and otherwise hands the
+  // .mjs file to whatever program Windows opens it with. 0.1.0 shipped without it (fix-cli-shebang).
+  it('starts the CLI bundle with the shebang, and the action bundle without one', () => {
+    expect(readFileSync(join(outdir, 'cli.mjs'), 'utf8').slice(0, 20)).toBe(
+      '#!/usr/bin/env node\n',
+    );
+    expect(readFileSync(join(outdir, 'action.mjs'), 'utf8').slice(0, 2)).not.toBe('#!');
+  });
+
+  it('runs as the installed command, through the bin shim npm writes', async () => {
+    const tarball = await packed();
+    const project = mkdtempSync(join(tmpdir(), 'sealup installed project '));
+    try {
+      writeFileSync(join(project, 'package.json'), '{ "name": "installed", "private": true }\n');
+      await npm(`install --no-package-lock ${JSON.stringify(join(root, tarball))}`, project);
+      const run = await runShim(project, ['--version']);
+      expect(run).toEqual({ exitCode: 0, stdout: `${packageVersion}\n`, stderr: '' });
+    } finally {
+      rmSync(project, { recursive: true, force: true });
+    }
   });
 
   it("says the version from the action's checkout: the log's first line", async () => {
@@ -478,6 +507,11 @@ describe('a release build', () => {
     expect(text).not.toContain('Pin this step');
   });
 
+  it('starts the release bundle with the shebang too', () => {
+    const text = readFileSync(join(root, 'dist', 'cli.mjs'), 'utf8');
+    expect(text.slice(0, 20)).toBe('#!/usr/bin/env node\n');
+  });
+
   it('refuses a release SHA that is not a full commit SHA, building nothing', async () => {
     const outdir = join(root, 'refused');
     await expect(build({ outdir, releaseSha: 'v1.2.3' })).rejects.toThrow(
@@ -498,20 +532,62 @@ async function initWorkflow(bundle: string): Promise<string> {
 }
 
 /** `npm pack` in `folder`, the tarball written in it; gives the tarball's file name. */
-function npmPack(folder: string): Promise<string> {
+async function npmPack(folder: string): Promise<string> {
+  const out = await npm('pack --json --pack-destination .', folder);
+  const [packed] = JSON.parse(out) as { filename: string }[];
+  if (packed === undefined) throw new Error(`npm pack gave no tarball: ${out}`);
+  return packed.filename;
+}
+
+/**
+ * This process's environment without npm's own variables: under `npm run`, npm hands its
+ * children the repo's settings as `npm_config_*` (its folder as `npm_config_local_prefix`, the
+ * repo's .npmrc), and the npm runs here must see the temp folder they run in, as a user's would.
+ */
+function outsideNpmEnv(): NodeJS.ProcessEnv {
+  const { GITHUB_ACTIONS: _, ...env } = process.env;
+  return Object.fromEntries(
+    Object.entries(env).filter(([name]) => !name.toLowerCase().startsWith('npm_')),
+  );
+}
+
+/**
+ * `npm <args>` in `folder`; gives its stdout. npm is a .cmd file on Windows: only a shell runs it.
+ * The commands are fixed text, paths quoted. Nothing here needs the network (the tarball has no
+ * dependencies), no install script runs, and the update check, audit and funding lines would only
+ * slow it down.
+ */
+function npm(args: string, folder: string): Promise<string> {
+  const quiet = '--ignore-scripts --offline --no-update-notifier --no-audit --no-fund';
   return new Promise((resolve, reject) => {
-    // npm is a .cmd file on Windows: only a shell runs it. The command is fixed text. Packing
-    // needs no network, and the update check would only slow it down.
-    exec(
-      'npm pack --json --ignore-scripts --offline --no-update-notifier --pack-destination .',
-      { cwd: folder },
-      (error, out) => {
-        if (error !== null) return reject(error);
-        const [packed] = JSON.parse(out) as { filename: string }[];
-        if (packed === undefined) return reject(new Error(`npm pack gave no tarball: ${out}`));
-        resolve(packed.filename);
-      },
-    );
+    exec(`npm ${args} ${quiet}`, { cwd: folder, env: outsideNpmEnv() }, (error, out, err) => {
+      if (error !== null) return reject(new Error(`npm ${args} failed: ${err}`));
+      resolve(out);
+    });
+  });
+}
+
+/**
+ * Runs `sealup <args>` in `project` the way an installed command runs: through the shim npm
+ * wrote in node_modules/.bin, `sealup.cmd` by cmd.exe on Windows, the `sealup` link executed
+ * directly elsewhere.
+ */
+function runShim(project: string, args: readonly string[]): Promise<CliRun> {
+  const done =
+    (resolve: (run: CliRun) => void) =>
+    (error: ExecFileException | null, stdout: string, stderr: string) => {
+      const exitCode = error === null ? 0 : typeof error.code === 'number' ? error.code : 1;
+      resolve({ exitCode, stdout, stderr });
+    };
+  const options = { cwd: project, env: { ...outsideNpmEnv(), NO_COLOR: '1' } };
+  const bin = join(project, 'node_modules', '.bin', 'sealup');
+  return new Promise((resolve) => {
+    if (process.platform === 'win32') {
+      // A .cmd file runs only through cmd.exe; the path is quoted (the folder has spaces).
+      exec(`${JSON.stringify(`${bin}.cmd`)} ${args.join(' ')}`, options, done(resolve));
+    } else {
+      execFile(bin, args, options, done(resolve));
+    }
   });
 }
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/sealup/sealup/compare/v0.1.0...v0.1.1) (2026-10-11)
+
+### Bug Fixes
+
+* **cli:** the installed `sealup` command runs with Node: 0.1.0's `npx sealup` did nothing on Windows and failed on Linux and macOS (its first line, `#!/usr/bin/env node`, was missing). The GitHub Action was not affected.
+* **ftp:** a short `timeout` no longer fails the connection right after login ("no login folder" on a slow link).
+
 ## 0.1.0 (2026-10-10)
 
 The first public release.

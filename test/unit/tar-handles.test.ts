@@ -35,16 +35,24 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 
 const root = '/home/deploy/www' as ServerPath;
 const size = 4 * 1024 * 1024;
+/**
+ * Read to the end, a file takes a few reads (the packer reads 64 KiB at a time), not 64: 8 MiB of
+ * random bytes through gzip took over the 5 s test timeout on a loaded machine.
+ */
+const smallSize = 3 * 64 * 1024 + 1;
 let folder = '';
 let entries: TarEntry[] = [];
+let small: TarEntry[] = [];
 beforeAll(() => {
   folder = mkdtempSync(join(tmpdir(), 'sealup-tar-handles-'));
-  entries = ['a.bin', 'b.bin'].map((name) => {
+  const write = (name: string, bytes: number): TarEntry => {
     const file = join(folder, name);
     // Random, so gzip cannot shrink it: the reader is mid-file after its first chunks.
-    writeFileSync(file, randomBytes(size));
-    return { name: name as RemotePath, source: { file, size }, mode: 0o644, mtime: 0 };
-  });
+    writeFileSync(file, randomBytes(bytes));
+    return { name: name as RemotePath, source: { file, size: bytes }, mode: 0o644, mtime: 0 };
+  };
+  entries = ['a.bin', 'b.bin'].map((name) => write(name, size));
+  small = ['c.bin', 'd.bin'].map((name) => write(name, smallSize));
 });
 afterAll(() => rmSync(folder, { recursive: true, force: true }));
 afterEach(() => {
@@ -54,7 +62,8 @@ afterEach(() => {
 
 describe('tar packer: local files', () => {
   it('are closed once the stream is read to the end', async () => {
-    for await (const _ of packTar(root, entries)) {
+    // The packer awaits each close before it goes on, so the stream cannot end before it.
+    for await (const _ of packTar(root, small)) {
       // Read it all.
     }
     expect(tracked.opened).toBe(2);

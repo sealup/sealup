@@ -36,7 +36,7 @@ In GitHub Actions, after your build step. `sealup init` writes this workflow for
 
 <!-- x-release-please-start-version -->
 ```yaml
-- uses: sealup/sealup@<commit SHA> # v0.1.0
+- uses: sealup/sealup@<commit SHA> # v0.1.1
   id: sealup
   env:
     SEALUP_PASSWORD: ${{ secrets.SEALUP_PASSWORD }}
@@ -88,9 +88,11 @@ To verify a release:
 <!-- x-release-please-start-version -->
 ```sh
 npm audit signatures                                     # in a project that installed sealup
-gh release verify v0.1.0 --repo sealup/sealup
-gh release verify-asset v0.1.0 sealup-0.1.0.tgz --repo sealup/sealup
-gh attestation verify sealup-0.1.0.tgz --repo sealup/sealup
+v=0.1.1                                                  # the release to check
+gh release download v$v --repo sealup/sealup --pattern "sealup-$v.tgz"
+gh release verify v$v --repo sealup/sealup
+gh release verify-asset v$v sealup-$v.tgz --repo sealup/sealup
+gh attestation verify sealup-$v.tgz --repo sealup/sealup
 ```
 <!-- x-release-please-end -->
 

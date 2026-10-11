@@ -12,6 +12,12 @@
 // release build gives `--release-sha`, the release commit's full SHA: it goes into the CLI
 // bundle only (init pins the workflow's sealup step to it, decision 38), never into the action's.
 //
+// The CLI bundle's first line is `#!/usr/bin/env node`, before the shims: it is the package's
+// `bin`, and npm's shims run the file itself. Without that line the shell reads it on Linux and
+// macOS ("import: command not found"), and on Windows sealup.cmd hands it to whatever program
+// opens .mjs files, not Node (0.1.0 shipped so; fix-cli-shebang). The action's bundle has none:
+// the runner starts it with `node`, and it is committed, byte for byte.
+//
 // The bundle is ESM, but ssh2 is CommonJS: the banner gives it `require`, `__filename` and
 // `__dirname` (without them it dies at start: "Dynamic require of "crypto" is not supported",
 // "__dirname is not defined"). ssh2's native parts are left out: `cpu-features` is external
@@ -34,6 +40,9 @@ const shims = [
   'const __filename = __sealupFileURLToPath(import.meta.url);',
   'const __dirname = __sealupDirname(__filename);',
 ].join('\n');
+
+/** The CLI bundle's first line: npm's bin shims run the file, so it names its interpreter. */
+const shebang = '#!/usr/bin/env node';
 
 export interface BuildOptions {
   /** Output folder; `dist/` in the repo by default. */
@@ -58,17 +67,17 @@ export async function build(options: BuildOptions = {}): Promise<void> {
   }
   const outdir = resolve(options.outdir ?? join(repoRoot, 'dist'));
   mkdirSync(outdir, { recursive: true });
-  const cli = await bundle(
-    options.entry ?? join(repoRoot, 'src', 'cli', 'bin.ts'),
-    releaseSha === undefined ? {} : { SEALUP_RELEASE_SHA: JSON.stringify(releaseSha) },
-  );
+  const cli = await bundle(options.entry ?? join(repoRoot, 'src', 'cli', 'bin.ts'), {
+    banner: `${shebang}\n${shims}`,
+    define: releaseSha === undefined ? {} : { SEALUP_RELEASE_SHA: JSON.stringify(releaseSha) },
+  });
   writeFileSync(join(outdir, 'cli.mjs'), cli.code);
   writeFileSync(join(outdir, 'meta.json'), JSON.stringify(cli.metafile));
   writeFileSync(join(outdir, 'THIRD_PARTY_LICENSES.txt'), cli.licences);
   if (options.entry === undefined) {
     // The action's bundle is committed alone (spec #24 decision 35), so it carries its bundled
     // code's licences itself, in a comment at its end.
-    const action = await bundle(join(repoRoot, 'src', 'action', 'bin.ts'));
+    const action = await bundle(join(repoRoot, 'src', 'action', 'bin.ts'), { banner: shims });
     const notice = action.licences.replaceAll('*/', '* /');
     writeFileSync(join(outdir, 'action.mjs'), `${action.code}\n/*\n${notice}*/\n`);
   }
@@ -104,10 +113,13 @@ const savings: esbuild.Plugin = {
   },
 };
 
-/** One bundle of `entry`, its metafile and its licence text; throws on a licence problem. */
+/**
+ * One bundle of `entry`, its `banner` first (the shims, after the CLI's shebang), its metafile
+ * and its licence text; throws on a licence problem.
+ */
 async function bundle(
   entry: string,
-  define: Readonly<Record<string, string>> = {},
+  options: { readonly banner: string; readonly define?: Readonly<Record<string, string>> },
 ): Promise<{ code: string; metafile: esbuild.Metafile; licences: string }> {
   const result = await esbuild.build({
     absWorkingDir: repoRoot,
@@ -120,8 +132,8 @@ async function bundle(
     format: 'esm',
     target: 'node24',
     external: ['cpu-features'],
-    banner: { js: shims },
-    define: { ...define },
+    banner: { js: options.banner },
+    define: { ...options.define },
     plugins: [savings],
     metafile: true,
     logLevel: 'silent',

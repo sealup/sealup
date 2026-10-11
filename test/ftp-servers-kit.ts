@@ -30,7 +30,18 @@ import { type ContainerFiles, containerFiles, docker } from './openssh-kit.ts';
 export type FtpServerKind = 'pure-ftpd' | 'proftpd' | 'vsftpd';
 
 const home = '/home/deploy';
-const passivePorts = 16;
+/**
+ * The passive ports of one container. Each session process picks its data connection's port at
+ * random from the range, and the pool's connections ask at the same moment: with 16, ProFTPD
+ * once answered `425 PASV: Address already in use` on CI, in the contract's concurrency test (4
+ * connections at once), most likely two of its processes taking one port (not reproduced on
+ * Docker Desktop). 32 halves the chance of two picking one port. 64 made Docker Desktop refuse
+ * connections to published ports in 3 runs of 6 on Windows (6 containers start at once); 32 and
+ * 16 did not, in 4 runs each.
+ */
+const passivePorts = 32;
+/** The ranges that fit between 20,000 and 32,767. */
+const passiveRanges = Math.floor((32_768 - 20_000) / passivePorts);
 
 export interface FtpContainer extends ContainerFiles {
   readonly kind: FtpServerKind;
@@ -98,8 +109,7 @@ async function startFtpContainer(
   try {
     // The password goes on chpasswd's stdin, never in an argument list.
     await docker(['exec', '--interactive', id, 'chpasswd'], `deploy:${options.password}\n`);
-    const published = (await docker(['port', id, '21/tcp'])).stdout.trim().split('\n')[0] ?? '';
-    const port = Number(published.slice(published.lastIndexOf(':') + 1));
+    const port = await publishedPort(id);
     await waitForGreeting('127.0.0.1', port);
     const logFile = kind === 'vsftpd' ? '/var/log/vsftpd.log' : '/var/log/proftpd/commands.log';
     return {
@@ -157,7 +167,7 @@ async function runWithPassivePorts(
   for (let attempt = 1; ; attempt++) {
     // Below the ephemeral ports of Linux (32768 up) and Windows (49152 up), where a client's own
     // socket could hold one.
-    const low = 20_000 + Math.floor(Math.random() * 750) * passivePorts;
+    const low = 20_000 + Math.floor(Math.random() * passiveRanges) * passivePorts;
     const high = low + passivePorts - 1;
     const env: Record<string, string> = {
       FTP_TLS: options.tls ? 'yes' : 'no',
@@ -188,6 +198,30 @@ async function runWithPassivePorts(
       const taken = /already allocated|address already in use|ports are not available/i;
       if (attempt >= 5 || !(error instanceof Error) || !taken.test(error.message)) throw error;
     }
+  }
+}
+
+/**
+ * The host port Docker published for the container's port 21, once it says (within 30 s). Docker
+ * Desktop names it up to 3 s after `docker run` returns, with six containers starting: read at
+ * once, it was empty, and the test dialled port 0 ("did not greet within 30 s").
+ */
+async function publishedPort(id: string): Promise<number> {
+  const deadline = Date.now() + 30_000;
+  for (;;) {
+    // Some Docker versions fail `docker port` until the port is published: the same as none yet.
+    let failure: unknown;
+    const asked = await docker(['port', id, '21/tcp']).catch((error: unknown) => {
+      failure = error;
+      return undefined;
+    });
+    const published = asked?.stdout.trim().split('\n')[0] ?? '';
+    const port = Number(published.slice(published.lastIndexOf(':') + 1));
+    if (published !== '' && Number.isInteger(port) && port > 0) return port;
+    if (Date.now() > deadline) {
+      throw new Error(`Docker published no port 21 for ${id} in 30 s`, { cause: failure });
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
 }
 

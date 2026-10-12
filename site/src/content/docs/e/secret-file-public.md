@@ -17,7 +17,7 @@ description: 'A file written from a secret would land in a folder the web server
 
 ## What happened
 
-A `write:` entry writes a file from a secret into a folder whose name looks public: `www`, `public_html`, `public`, `htdocs`, `httpdocs`, `html`, `web` or `wwwroot`.
+A `write:` entry writes a file from a secret into a folder whose name looks public: `www`, `public_html`, `public`, `htdocs`, `httpdocs`, `html`, `web` or `wwwroot`. [Files written from a secret](/write/) explains `write:`.
 
 ## Why
 

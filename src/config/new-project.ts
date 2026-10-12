@@ -13,10 +13,19 @@ import { hostKeyPlaceholder } from './save-host-key.ts';
 /** The variable init's sealup.yml names for the password (0022 §6). */
 export const passwordVariable = 'SEALUP_PASSWORD';
 
+/** The variables a public repository's sealup.yml names for the server and its host key (0045). */
+export const serverVariable = 'SEALUP_SERVER';
+export const hostKeyVariable = 'SEALUP_HOST_KEY';
+
 /** What a new sealup.yml holds: one target, the shorthand. */
 export interface NewConfig {
   readonly server: string;
   readonly hostKey?: string;
+  /**
+   * A public repository (0045): `server` and `hostKey` are written as `${SEALUP_SERVER}` and
+   * `${SEALUP_HOST_KEY}`, their values going to sealup.env (init's EnvValue).
+   */
+  readonly publicRepo?: boolean;
   /** One folder (`upload: dist`), or `local: remote` pairs. */
   readonly upload: string | readonly (readonly [local: string, remote: string])[];
   readonly exclude?: readonly string[];
@@ -28,10 +37,11 @@ export interface NewConfig {
 
 /**
  * sealup.yml for one target: `server`, `password` from `${SEALUP_PASSWORD}`, `hostKey` (the
- * placeholder comment when none; nothing for `ftp://` and `ftps://`, which have no host key), `upload`, then
- * `exclude`, `write` and `pull` when given (the
- * sam-sync conversion). A value YAML would read otherwise is quoted. The text is read back by
- * the YAML parser and must give exactly these facts.
+ * placeholder comment when none; nothing for `ftp://` and `ftps://`, which have no host key),
+ * `upload`, then `exclude`, `write` and `pull` when given (the sam-sync conversion);
+ * `publicRepo`: the server and the host key as references (0045). A value YAML would read
+ * otherwise is quoted. The text is read back by the YAML parser and must give exactly these
+ * facts.
  */
 export function newConfigText(facts: NewConfig): string {
   const pairs = (key: string, list: readonly (readonly [string, string])[]): string[] =>
@@ -41,14 +51,14 @@ export function newConfigText(facts: NewConfig): string {
   const exclude = facts.exclude ?? [];
   // FTP and FTPS have no host key: no placeholder to fill in (spec #41 decision 10).
   const ftp = /^ftps?:\/\//.test(facts.server);
+  const references = facts.publicRepo === true;
+  const server = references ? `$\{${serverVariable}}` : facts.server;
+  const hostKey =
+    facts.hostKey === undefined || !references ? facts.hostKey : `$\{${hostKeyVariable}}`;
   const lines = [
-    `server: ${scalar(facts.server)}`,
+    `server: ${scalar(server)}`,
     `password: $\{${passwordVariable}}`,
-    ...(facts.hostKey !== undefined
-      ? [`hostKey: ${scalar(facts.hostKey)}`]
-      : ftp
-        ? []
-        : [hostKeyPlaceholder]),
+    ...(hostKey !== undefined ? [`hostKey: ${scalar(hostKey)}`] : ftp ? [] : [hostKeyPlaceholder]),
     ...(typeof facts.upload === 'string'
       ? [`upload: ${scalar(facts.upload)}`]
       : pairs(
@@ -71,9 +81,9 @@ export function newConfigText(facts: NewConfig): string {
   const text = lines.join('\n');
   const read = parseDocument(text).toJS() as Record<string, unknown>;
   const expected = {
-    server: facts.server,
+    server,
     password: `$\{${passwordVariable}}`,
-    ...(facts.hostKey === undefined ? {} : { hostKey: facts.hostKey }),
+    ...(hostKey === undefined ? {} : { hostKey }),
     upload: typeof facts.upload === 'string' ? facts.upload : Object.fromEntries(facts.upload),
     ...(exclude.length === 0 ? {} : { exclude }),
     ...(write.length === 0
@@ -137,14 +147,23 @@ export function envSecret(
 }
 
 /**
- * An env file's text with the Secret's variable (`envName=value`) added on a line of its own, in
- * the first form the env-file reader gives back exactly (single quotes, backticks, double quotes,
- * bare). A file that already sets the variable (not empty) is left as it is. The Secret comes
- * from envSecret.
+ * A value bound for sealup.env that is not a secret: a public repository's server or host key
+ * (0045). It stays a plain value: never redacted, never masked.
  */
-export function withEnvVariable(text: string, secret: Secret): EnvEdit {
-  const name = secret.envName;
-  const value = envValues.get(secret);
+export interface EnvValue {
+  readonly envName: string;
+  readonly value: string;
+}
+
+/**
+ * An env file's text with the variable (`envName=value`) added on a line of its own, in the first
+ * form the env-file reader gives back exactly (single quotes, backticks, double quotes, bare). A
+ * file that already sets the variable (not empty) is left as it is. A Secret comes from
+ * envSecret; an EnvValue holds its value.
+ */
+export function withEnvVariable(text: string, variable: Secret | EnvValue): EnvEdit {
+  const name = variable.envName;
+  const value = 'value' in variable ? variable.value : envValues.get(variable);
   if (value === undefined) throw new TypeError('not a Secret made by envSecret()');
   const before = parseEnv(text);
   const set = before[name];

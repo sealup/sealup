@@ -124,6 +124,11 @@ const sentenceOf = (text: string): string =>
 
 const cell = (text: string): string => text.replaceAll('|', '\\|');
 
+/** The keys a docs page explains at length: its link and its title. */
+const guides: Readonly<Record<string, { readonly href: string; readonly title: string }>> = {
+  write: { href: '/write/', title: 'Files written from a secret' },
+};
+
 function section(name: string, key: Key, help: Map<string, string>): string[] {
   const { node } = key;
   const lines = [`### \`${name}\``, ''];
@@ -137,6 +142,8 @@ function section(name: string, key: Key, help: Map<string, string>): string[] {
   if (each !== undefined) lines.push(`- **Each value:** ${each}`);
   lines.push(`- **Where:** ${key.places.join('; ')}`);
   if (key.requiredIn.length > 0) lines.push(`- **Required:** ${key.requiredIn.join('; ')}`);
+  const guide = guides[name];
+  if (guide !== undefined) lines.push(`- **Guide:** [${guide.title}](${guide.href})`);
   const rows = entries(node).filter(
     ([child], index, all) => all.findIndex(([other]) => other === child) === index,
   );
@@ -198,6 +205,25 @@ export function configPage(schema: unknown): string {
     '`$$` writes a plain `$`. Variables come from the environment, and on your machine from',
     '`sealup.env` (or the file given to `--env-file`). A password is always a variable: sealup',
     'stops on a password written in the file.',
+    '',
+    '## A public repository',
+    '',
+    'A public repository can keep the server and its host key out of the file too: `sealup init`',
+    'writes this form when you say the repository is public. To switch a project by hand, move each',
+    "value to `sealup.env` and to your CI secrets, under the variable's name, and pass each one in",
+    "the workflow's `env:`:",
+    '',
+    '```yaml',
+    'server: ${SEALUP_SERVER}',
+    'password: ${SEALUP_PASSWORD}',
+    'hostKey: ${SEALUP_HOST_KEY}',
+    'upload: dist',
+    '```',
+    '',
+    'Over FTPS with a pinned certificate, the pin takes the third variable:',
+    '`tlsFingerprint: ${SEALUP_TLS_FINGERPRINT}`. In GitHub Actions, a server or key read from a',
+    'variable is masked like a password. What this protects, and what it does not:',
+    '[A public repository](/security/#a-public-repository).',
     '',
     '## Keys',
     '',

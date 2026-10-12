@@ -9,10 +9,11 @@
 // text; writeProject(plan) writes sealup.yml (from config's newConfigText), sealup.env (the
 // password through config's withEnvVariable), the `sealup.env` line in .gitignore and the
 // workflow, and gives each file and what happened to it, or the problem of a sealup.yml already
-// there. cli asks the questions (the server, the host key, the password) and report words the
-// screen. The sam-sync conversion (#37, undocumented) is a second way to make the plan:
-// readSamSync(folder, file) reads a sam-sync file, its download file and what the conversion
-// needs, convertSamSync (sam-sync.ts, pure) turns them into sealup.yml's facts and
+// there; a public repository's server and host key go to sealup.env as plain values (0045). cli
+// asks the questions (the server, the host key, whether the repo is public, the password) and
+// report words the screen. The sam-sync conversion (#37, undocumented) is a second way to make
+// the plan: readSamSync(folder, file) reads a sam-sync file, its download file and what the
+// conversion needs, convertSamSync (sam-sync.ts, pure) turns them into sealup.yml's facts and
 // convertedConfigText into its text; sealup.env gets the password and each secret file's content.
 //
 // Invariants: never overwrites. sealup.yml is created exclusively, first: one already there stops
@@ -28,6 +29,7 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { parseEnv } from 'node:util';
 import {
   type EnvSecret,
+  type EnvValue,
   envSecret,
   findRepoRoot,
   isFile,
@@ -168,9 +170,8 @@ const environmentName = 'production';
  * password from a secret through `env:`. `fromRepoRoot`: where the project is in the repo.
  */
 export function workflowText(options: {
+  /** sealup's version: the sealup step's tag. */
   readonly version: string;
-  /** The release commit's full SHA, when the build put it in: the sealup step's pin. */
-  readonly releaseSha?: string | undefined;
   readonly build?: Build;
   readonly nodeVersionFile?: string;
   readonly fromRepoRoot: string;
@@ -225,7 +226,9 @@ export function workflowText(options: {
           `        run: ${build.install} && ${build.run}`,
           '',
         ]),
-    ...sealupStep(options.version, options.releaseSha),
+    // sealup's own step by its version tag (0043): immutable releases lock the tag. The steps
+    // above keep their full-SHA pins, since nothing locks their tags.
+    `      - uses: sealup/sealup@v${options.version}`,
     '        id: sealup',
     ...(fromRepoRoot === '' ? [] : ['        with:', ...workingDirectory('          ')]),
     '        env:',
@@ -235,20 +238,6 @@ export function workflowText(options: {
     '',
   ];
   return lines.join('\n');
-}
-
-/**
- * The sealup step's `uses:` (0017, spec #41 decision 38): the release commit's full SHA with its
- * tag in a comment, as the other steps are pinned, when the build put the SHA in; else the tag,
- * with a comment saying to pin it.
- */
-function sealupStep(version: string, releaseSha: string | undefined): string[] {
-  if (releaseSha !== undefined) return [`      - uses: sealup/sealup@${releaseSha} # v${version}`];
-  return [
-    `      # Pin this step to v${version}'s full commit SHA (on its release page), as the`,
-    '      # steps above are: a tag can move, a commit cannot.',
-    `      - uses: sealup/sealup@v${version}`,
-  ];
 }
 
 /** A YAML string on one line: plain when it is plainly safe, else double-quoted (JSON's form). */
@@ -264,13 +253,12 @@ export interface InitPlan {
   /**
    * The variables for sealup.env, in order, each a Secret from config's envSecret (its variable
    * is its envName): the password (absent without a terminal, or when sealup.env has one) and,
-   * from a sam-sync conversion, the content of each file written from a secret.
+   * from a sam-sync conversion, the content of each file written from a secret; or an EnvValue:
+   * a public repository's server and host key (0045).
    */
-  readonly env: readonly Secret[];
+  readonly env: readonly (Secret | EnvValue)[];
   /** sealup's version: the sealup step's tag. */
   readonly version: string;
-  /** The release commit's full SHA, when the bundle carries it: the sealup step's pin. */
-  readonly releaseSha?: string | undefined;
   /** The variables the workflow's sealup step gets from secrets (default: the password's). */
   readonly variables?: readonly string[];
 }
@@ -317,7 +305,10 @@ export async function writeProject(
  * sealup.env: created with mode 0600, or each variable it lacks appended and the file then set to
  * mode 0600 (R17: a file that holds secrets is its owner's alone; where the system has modes).
  */
-async function writeEnv(file: string, variables: readonly Secret[]): Promise<InitFile> {
+async function writeEnv(
+  file: string,
+  variables: readonly (Secret | EnvValue)[],
+): Promise<InitFile> {
   const before = await readText(file);
   let text = before ?? '';
   const added: string[] = [];
@@ -360,7 +351,6 @@ async function writeWorkflow(plan: InitPlan): Promise<InitFile> {
   const file = project.workflow.file;
   const text = workflowText({
     version: plan.version,
-    releaseSha: plan.releaseSha,
     ...(project.build === undefined ? {} : { build: project.build }),
     ...(project.nodeVersionFile === undefined ? {} : { nodeVersionFile: project.nodeVersionFile }),
     fromRepoRoot: project.fromRepoRoot,

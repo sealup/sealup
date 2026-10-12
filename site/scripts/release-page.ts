@@ -1,53 +1,40 @@
 // The release facts the site prints, written at each build (spec sealup/sealup#41 decision 40,
-// story 96, I-088): the GitHub Action page's step, pinned to the release commit's full SHA with
-// its tag in a comment (as `sealup init` writes it, decision 38), and the verify commands of the
-// version built (as SECURITY.md and the release notes give them).
+// story 96, I-088): the sealup step of a workflow, by the version tag as `sealup init` writes it
+// (decision 0043: immutable releases lock the tag), and the verify commands of the version built
+// (as SECURITY.md and the release notes give them).
 //
 //   node scripts/release-page.ts    writes src/generated/release.json (git-ignored)
 //
-// The version is package.json's. The commit is known on a release tag's build only: the public
-// repo's pages.yml, called by release.yml on the tag `vX.Y.Z` (GITHUB_REF_TYPE `tag`, GITHUB_SHA
-// the release commit, which release.yml also builds into the CLI). Any other build (a branch, a
-// pull request, a laptop) prints init's other form: the tag, and a comment saying to pin it.
+// The version is package.json's. On a release tag's build (the public repo's pages.yml, called by
+// release.yml on the tag `vX.Y.Z`, GITHUB_REF_TYPE `tag`), the tag must be that version.
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 export interface Release {
   readonly version: string;
-  /** The release commit's full SHA, on a release tag's build only. */
-  readonly sha?: string;
 }
 
-/** The release a build is for, from GitHub's environment and package.json's version. */
+/** The release a build is for: package.json's version, checked against the tag on a tag build. */
 export function releaseOf(env: Readonly<Record<string, string | undefined>>, version: string): Release {
-  if (env.GITHUB_REF_TYPE !== 'tag') return { version };
-  const tag = env.GITHUB_REF_NAME ?? '';
-  if (tag !== `v${version}`) {
-    throw new Error(`the tag ${tag} is not package.json's version, v${version}`);
+  if (env.GITHUB_REF_TYPE === 'tag' && env.GITHUB_REF_NAME !== `v${version}`) {
+    throw new Error(`the tag ${env.GITHUB_REF_NAME ?? ''} is not package.json's version, v${version}`);
   }
-  const sha = env.GITHUB_SHA ?? '';
-  if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error(`GITHUB_SHA is not a full commit SHA: ${sha}`);
-  return { version, sha };
+  return { version };
 }
 
 /**
- * The sealup step of a workflow, at the left margin: init's `uses:` line (pinned to the release
- * commit; else the tag, with init's comment saying to pin it), its id, and the password from a
- * secret through `env:`.
+ * The sealup step of a workflow, at the left margin (spec #88 decision 12): `uses:` by the version
+ * tag, then the password from a secret through `env:`. With `id`, the step has `id: sealup`, as
+ * init's workflow and the Action page give it, for `steps.sealup.outputs.url`.
  */
-export function actionStep(release: Release): string {
-  const uses =
-    release.sha === undefined
-      ? [
-          `# Pin this step to v${release.version}'s full commit SHA (on its release page), as the`,
-          '# steps above are: a tag can move, a commit cannot.',
-          `- uses: sealup/sealup@v${release.version}`,
-        ]
-      : [`- uses: sealup/sealup@${release.sha} # v${release.version}`];
-  return [...uses, '  id: sealup', '  env:', `    SEALUP_PASSWORD: $\{{ secrets.SEALUP_PASSWORD }}`].join(
-    '\n',
-  );
+export function actionStep(release: Release, options: { readonly id?: boolean } = {}): string {
+  return [
+    `- uses: sealup/sealup@v${release.version}`,
+    ...(options.id === true ? ['  id: sealup'] : []),
+    '  env:',
+    `    SEALUP_PASSWORD: $\{{ secrets.SEALUP_PASSWORD }}`,
+  ].join('\n');
 }
 
 /** The commands that check a release came from sealup's repo, as its release notes give them. */
@@ -75,8 +62,10 @@ if (import.meta.main) {
   mkdirSync(out, { recursive: true });
   const facts = {
     version: release.version,
-    pinned: release.sha !== undefined,
+    /** The home page's step. */
     step: actionStep(release),
+    /** The Action page's step, which reads `steps.sealup.outputs.url`. */
+    stepWithId: actionStep(release, { id: true }),
     verify: verifyCommands(release.version),
   };
   writeFileSync(join(out, 'release.json'), `${JSON.stringify(facts, null, 2)}\n`);

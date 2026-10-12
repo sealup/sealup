@@ -24,7 +24,8 @@
 // printKeyscan(out, form, step) (S04, keyscan.ts), printCertificateScan(out, form, step) on an
 // `ftps://` target (certificate-scan.ts), with printKeyscanJson and
 // createKeyscanJsonReporter (`keyscan --json`, json.ts), printInit(out, form, step) (S02,
-// init.ts) with printInitJson and createInitJsonReporter. `out` is a stream to
+// init.ts) with printInitJson and createInitJsonReporter, and publicQuestion, the words of its
+// public-repository question (0045). `out` is a stream to
 // write to, whether to colour, and whether it is a terminal (the progress line). The number
 // formatters and `docsSlugs` (every slug linked as `sealup.dev/e/<slug>`, ruling 9) are exported
 // for tests and the docs site.
@@ -75,7 +76,7 @@
 
 export { formatBytes, formatCount, formatSeconds } from './format.ts';
 export { type HelpTopic, helpTopics } from './help.ts';
-export type { InitStep } from './init.ts';
+export { type InitStep, publicQuestion } from './init.ts';
 export {
   createCheckJsonReporter,
   createInitJsonReporter,

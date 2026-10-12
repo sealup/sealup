@@ -39,6 +39,38 @@ the `hostKey` line of `sealup.yml` changes.
 It prints the `hostKey` line to paste and never writes: sealup never trusts a server key from
 CI. Another key than the saved one: exit 4 ([host-key-not-replaced](/e/host-key-not-replaced/)).
 
+## A key read from a variable
+
+When `sealup.yml` reads the key from a variable (`hostKey: ${SEALUP_HOST_KEY}`, as a public
+repository does), `keyscan` never writes over it and asks nothing. It prints the key line and
+names the variable to set, in `sealup.env` and in your CI secrets. Another key than the
+variable's: exit 4. The variable not set yet: it shows the key to set, exit 0. The same holds
+for `tlsFingerprint` ([key-in-variable](/e/key-in-variable/)).
+
+## A public repository without a saved key
+
+When you answer that the repository is public but do not save the host key, `sealup init`
+reads the server from `${SEALUP_SERVER}` and leaves the comment
+`# hostKey: run sealup keyscan on your computer` in `sealup.yml`. `keyscan` would then save the
+key there in plain text, and the key can be looked up to find the server. Replace the comment
+with the reference first:
+
+```yaml
+hostKey: ${SEALUP_HOST_KEY}
+```
+
+Then run `sealup keyscan`: it saves nothing and prints the key line. Once you have compared its
+fingerprint with your host's, set `SEALUP_HOST_KEY` to that line in `sealup.env` and as a secret
+in CI, and pass it in the workflow's `env:` beside `SEALUP_SERVER`:
+
+```yaml
+SEALUP_HOST_KEY: ${{ secrets.SEALUP_HOST_KEY }}
+```
+
+If `keyscan` already saved the key in the file, do the same by hand: move the `hostKey` value to
+`SEALUP_HOST_KEY` in `sealup.env` and in CI, and write `hostKey: ${SEALUP_HOST_KEY}` in its
+place.
+
 ## FTPS and FTP
 
 An `ftps://` server has no host key: its TLS certificate stands for it. `keyscan` shows the

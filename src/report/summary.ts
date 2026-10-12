@@ -36,6 +36,7 @@ import {
 import { lockWords } from './lock-words.ts';
 import type { Slug } from './problems.ts';
 import { type Reconnects, reconnectBox } from './reconnect-words.ts';
+import { fromVariableValues, hidesServer, identityOf, shownIdentity } from './server-shown.ts';
 import { code, summaryWords } from './summary-words.ts';
 import { warningWords } from './warning-words.ts';
 
@@ -68,10 +69,48 @@ const summaryListLines = 1_000;
 
 /** The summary of a run, ending with a line break. */
 export function summaryMarkdown(run: SummaryRun): string {
-  const { outcome } = run;
+  const { outcome, target } = run;
+  // A target that hides a part (decision 0045): its user is hidden where the words name it.
+  const shown = hidesServer(target) ? { ...run, target: userHidden(target) } : run;
   const blocks =
-    outcome.problem === undefined ? doneBlocks(run) : problemBlocks(run, outcome.problem);
-  return `${blocks.join('\n\n')}\n`;
+    outcome.problem === undefined ? doneBlocks(shown) : problemBlocks(shown, outcome.problem);
+  return `${masked(blocks.join('\n\n'), run)}\n`;
+}
+
+/** `${NAME}`: how the summary shows a value read from a variable (decision 0045). */
+function reference(variable: string): string {
+  return `\${${variable}}`;
+}
+
+/** The target with a server read from a variable naming its user `***`. */
+function userHidden(target: Target): Target {
+  if (target.fromVariables?.server === undefined) return target;
+  return { ...target, server: { ...target.server, user: '***' } };
+}
+
+/**
+ * The summary of a target that hides a part (decision 0045), with what would still give the
+ * server away shown as `***`, as GitHub masks it in the log: the server, its host and its key or
+ * certificate, and the key or certificate the server showed (an error that names the host, a
+ * shorthand target named after it, a changed key). The summary never relies on GitHub masking
+ * it. Not the user: a user named like a common word (`deploy`) would hide sealup's own words
+ * (`sealup deploy`); the words that name it get `***` instead (userHidden). The references the
+ * target table shows are left as they are.
+ */
+function masked(text: string, run: SummaryRun): string {
+  const { target } = run;
+  if (!hidesServer(target)) return text;
+  const values = [
+    ...fromVariableValues(target).filter((value) => value !== target.server.user),
+    ...shownIdentity(run.hostKey, target),
+    ...shownIdentity(identityOf(run.outcome.problem), target),
+  ].sort((a, b) => b.length - a.length);
+  return text
+    .split(/(\$\{[A-Za-z_][A-Za-z0-9_]*\})/)
+    .map((part, i) =>
+      i % 2 === 1 ? part : values.reduce((shown, value) => shown.replaceAll(value, '***'), part),
+    )
+    .join('');
 }
 
 /** A run that ended well, or a dry run that reached its plan (S07-S10). */
@@ -171,11 +210,18 @@ function cell(text: string): string {
 function targetTable(run: SummaryRun): string[] {
   const { target } = run;
   if (target === undefined) return [];
-  const rows: [string, string][] = [['Target', code(formatServer(target.server))]];
+  // A value read from a variable is shown as its reference (decision 0045).
+  const from = target.fromVariables ?? {};
+  const server = from.server === undefined ? formatServer(target.server) : reference(from.server);
+  const rows: [string, string][] = [['Target', code(server)]];
   const check = run.hostKey;
   const expected = target.hostKey;
   const typed = (type: string, fingerprint: string): string =>
-    `${keyType(type)} ${code(fingerprint)}`;
+    `${keyType(type)} ${code(
+      from.hostKey !== undefined && fingerprint === expected?.fingerprint
+        ? reference(from.hostKey)
+        : fingerprint,
+    )}`;
   if (check === undefined) {
     rows.push(['Host key', 'not checked: sealup stopped before connecting']);
   } else if (check.state === 'verified') {
@@ -189,7 +235,11 @@ function targetTable(run: SummaryRun): string[] {
     // FTPS (spec #41 decision 10): the certificate stands for the host key.
     const { subject, sha256 } = check.certificate;
     const how = check.check === 'refused' ? '**refused**' : check.check;
-    rows.push(['Certificate', `${code(printable(subject))} SHA-256 ${code(sha256)} ${how}`]);
+    const pinned =
+      from.tlsFingerprint !== undefined && sha256 === target.tlsFingerprint
+        ? reference(from.tlsFingerprint)
+        : sha256;
+    rows.push(['Certificate', `${code(printable(subject))} SHA-256 ${code(pinned)} ${how}`]);
   } else if (check.state === 'missing') {
     rows.push(['Host key', `**missing** (no \`hostKey\` in ${fileName(run.configFile)})`]);
   } else if (check.state === 'changed') {

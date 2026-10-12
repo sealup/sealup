@@ -48,6 +48,8 @@ import {
   reconnectingLines,
   reconnectNotice,
 } from './reconnect-words.ts';
+import { printLateMasks } from './screens.ts';
+import { hidesServer, identityOf, shownIdentity } from './server-shown.ts';
 import {
   annotationCommands,
   eraseLine,
@@ -121,6 +123,15 @@ export function createTerminalReporter(out: Out, options: TerminalOptions = {}):
   let group: Group | undefined;
   /** The run's first lost connection and the try that came back (S11). */
   let reconnects: Reconnects | undefined;
+  /** What the server showed of itself that this log masks already (decision 0045). */
+  const masked = new Set<string>();
+  /** GitHub's form, a target that hides a part: masks what the server showed, before it shows. */
+  const maskShown = (check: HostKeyCheck | undefined): void => {
+    if (form !== 'github' || !hidesServer(target)) return;
+    const fresh = shownIdentity(check, target).filter((value) => !masked.has(value));
+    for (const value of fresh) masked.add(value);
+    if (fresh.length > 0) printLateMasks(out, fresh);
+  };
   return {
     on(event: DeployEvent) {
       if (event.type === 'progress') {
@@ -152,6 +163,7 @@ export function createTerminalReporter(out: Out, options: TerminalOptions = {}):
           write(targetLines(event.target));
           return;
         case 'host-key': {
+          maskShown(event);
           const lines = hostKeyLines(event, target, configFile);
           // On ssh://, the transfer line comes next, before the block's blank line (S12).
           const more = event.state === 'verified' && target?.server.protocol === 'ssh';
@@ -206,6 +218,7 @@ export function createTerminalReporter(out: Out, options: TerminalOptions = {}):
             writeCommand(out, group.close);
           }
           if (outcome.problem !== undefined) {
+            maskShown(identityOf(outcome.problem));
             write(problemLines(outcome.problem, target, configFile, form === 'github'));
             if (options.debug === true) write(debugLines(outcome.problem));
             if (form === 'github') {

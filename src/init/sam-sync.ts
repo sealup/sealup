@@ -71,7 +71,7 @@ export interface SamSyncConversion {
     readonly local: string;
     readonly kind: 'folder' | 'file';
   }[];
-  /** `verbose` and `dry`, when the files set them: sealup has -v and -n. */
+  /** `verbose` and `dry`, when the files set them: sealup has -v and --dry-run. */
   readonly dropped: readonly ('verbose' | 'dry')[];
   /** The `.download.json`: on the same server (its entries are pulls), or another (skipped). */
   readonly download?: 'same' | 'other';
@@ -265,11 +265,23 @@ function defaultPort(type: string | undefined): number {
   return type === 'ftp' ? 21 : 22;
 }
 
-/** The facts of sealup.yml for newConfigText: the conversion, and the host key once saved. */
-function convertedConfig(conversion: SamSyncConversion, hostKey?: string): NewConfig {
+/** What the converted sealup.yml adds to the conversion. */
+interface ConvertedOptions {
+  /** The host key, once saved; else the placeholder. */
+  readonly hostKey?: string;
+  /** A public repository (0045): the server and the host key as references. */
+  readonly publicRepo?: boolean;
+}
+
+/** The facts of sealup.yml for newConfigText: the conversion, and its options. */
+function convertedConfig(
+  conversion: SamSyncConversion,
+  { hostKey, publicRepo }: ConvertedOptions,
+): NewConfig {
   return {
     server: conversion.server,
     ...(hostKey === undefined ? {} : { hostKey }),
+    ...(publicRepo === true ? { publicRepo } : {}),
     upload: conversion.upload.map(({ local, remote }) => [local, remote] as const),
     exclude: conversion.exclude,
     write: conversion.write.map(({ remote, variable }) => [remote, variable] as const),
@@ -277,9 +289,15 @@ function convertedConfig(conversion: SamSyncConversion, hostKey?: string): NewCo
   };
 }
 
-/** sealup.yml's text for the conversion, with the host key once saved (else the placeholder). */
-export function convertedConfigText(conversion: SamSyncConversion, hostKey?: string): string {
-  return newConfigText(convertedConfig(conversion, hostKey));
+/**
+ * sealup.yml's text for the conversion, with the host key once saved (else the placeholder);
+ * `publicRepo`: the server and the host key as references (0045).
+ */
+export function convertedConfigText(
+  conversion: SamSyncConversion,
+  options: ConvertedOptions = {},
+): string {
+  return newConfigText(convertedConfig(conversion, options));
 }
 
 /** sam-sync's JSON, or undefined when the text is not one sealup can read. */

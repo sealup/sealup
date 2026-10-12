@@ -43,7 +43,7 @@ You get an answer within 7 days. Once a fix is out, the advisory is published wi
 - By default sealup deletes only files it uploaded itself, and never excluded ones. Full mirror (`mirror: true`) is opt-in, never deletes excluded paths, and refuses the server's root or login folder unless you say so.
 - Each file arrives under a temporary name and is renamed into place, so visitors never see half a file. Leftovers of an interrupted run are removed by the next one.
 - The record of uploaded files lives in `.sealup/` in the login folder, out of the web root. A lock there keeps two runs from deploying to the same target at once.
-- A dry run (`sealup deploy -n`) shows every change before anything happens.
+- A dry run (`sealup deploy --dry-run`) shows every change before anything happens.
 
 ## How sealup ships
 
@@ -65,10 +65,11 @@ sha256sum -c SHA256SUMS                                  # beside the downloaded
 
 ## What you should do
 
-- Pin the action to a full commit SHA (`sealup/sealup@<sha> # vX.Y.Z`), as `sealup init` writes it.
+- Pin the action to a release's full version (`sealup/sealup@vX.Y.Z`), as `sealup init` writes it. Releases are immutable, so the tag can't move; a policy that asks for commit SHAs can use `sealup/sealup@<sha> # vX.Y.Z`.
 - Give each site its own deploy user, limited to the smallest folder it needs.
 - Prefer `sftp://` or `ssh://`, with a private key, over FTP.
-- Keep production secrets in a GitHub environment or behind a protected branch. The server and host key can be `${NAME}` references too, so a changed `sealup.yml` can't send your password elsewhere.
+- Keep production secrets in a GitHub environment that only `main` may use, and require review on `main`: that is what keeps a changed `sealup.yml` from sending your password to another server, whether the server is written in it or read from a variable.
+- In a public repository, answer yes to `sealup init`'s question: the server and the host key go to `sealup.env` and CI secrets, and GitHub's log masks them. That hides them from strangers, not from someone who can push.
 - Rotate a password or key at once if it may have leaked.
 
 ## Known limits

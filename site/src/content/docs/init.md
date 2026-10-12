@@ -16,8 +16,12 @@ sealup init [flags]
 ## On a terminal
 
 It asks for the server address, then shows the server's host key and saves it on a yes. It
-asks for the password last, without showing what you type. The password goes to `sealup.env`,
-never to `sealup.yml`.
+asks whether the repository is public (no by default), and for the password last, without
+showing what you type. The password goes to `sealup.env`, never to `sealup.yml`.
+
+On "public", the server and the host key go to `sealup.env` too: `sealup.yml` reads them as
+`${SEALUP_SERVER}` and `${SEALUP_HOST_KEY}`, the workflow passes them from secrets, and the last
+screen names each secret to add (see [A public repository](/security/#a-public-repository)).
 
 ## Without a terminal
 
@@ -38,7 +42,8 @@ Global flags: `--json`, `--no-color` (see `sealup --help`).
 - An existing `sealup.yml` stops it with exit 2, and nothing is written (see
   [config-exists](/e/config-exists/)).
 - An existing workflow is left as it is.
-- An existing `sealup.env` only gets `SEALUP_PASSWORD` when it lacks it.
+- An existing `sealup.env` only gets the variables it lacks (`SEALUP_PASSWORD`, and for a
+  public repository `SEALUP_SERVER` and `SEALUP_HOST_KEY`).
 
 ## Examples
 

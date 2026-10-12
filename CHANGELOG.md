@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.2.0](https://github.com/sealup/sealup/compare/v0.1.1...v0.2.0) (2026-10-12)
+
+### Breaking changes
+
+* **cli:** `-n` is gone: the dry run is `--dry-run` only, for `deploy` and `pull`. `-n` is now an unknown flag (exit 2), so nothing deploys by mistake. Change `-n` to `--dry-run` in your scripts. The Action's `dry-run` input is unchanged.
+* **init:** the workflow `sealup init` writes uses the Action by its version, `uses: sealup/sealup@v0.2.0`, instead of a commit SHA. sealup's releases are immutable, so the tag cannot move. Workflows you already have keep working as they are; the [Action page](https://sealup.dev/github-action/) shows the SHA form for teams whose policy asks for one.
+
+### Features
+
+* **init:** asks whether the repository is public. On yes, `sealup.yml` holds `server: ${SEALUP_SERVER}` and `hostKey: ${SEALUP_HOST_KEY}` instead of the login name, server and host key; their values go in `sealup.env`, the workflow passes them from secrets, and the last screen lists each secret to add.
+* **GitHub Actions:** a server, host key or certificate fingerprint read from a `${NAME}` variable is masked in GitHub's log before anything else is printed, and so is a key or certificate the server shows during the run. The job summary names the variable (`${SEALUP_SERVER}`) where it showed the server.
+* **keyscan:** `--save` never writes over a `${NAME}` host key or fingerprint: it prints the new value and names the variable to update, in `sealup.env` and in CI. A changed host key read from a variable gives the same advice.
+
 ## [0.1.1](https://github.com/sealup/sealup/compare/v0.1.0...v0.1.1) (2026-10-11)
 
 ### Bug Fixes

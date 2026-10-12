@@ -98,6 +98,25 @@ describe('envSecret and withEnvVariable: the password into sealup.env', () => {
     expect(withEnv('', 'SEALUP_PASSWORD', value)).toEqual({ ok: false, reason });
   });
 
+  // Decision 0045: the server and the host key of a public repository are not secrets.
+  it('writes a plain value (the server, a host key) so the reader gives it back, never redacted', () => {
+    const value = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOnlyAPlainValue0045';
+    const edit = withEnvVariable('SEALUP_PASSWORD=secret-pw\n', {
+      envName: 'SEALUP_HOST_KEY',
+      value,
+    });
+    expect(edit).toMatchObject({ ok: true, added: true });
+    if (edit.ok) {
+      expect(parseEnv(edit.text)).toEqual({ SEALUP_PASSWORD: 'secret-pw', SEALUP_HOST_KEY: value });
+    }
+    expect(redact(`x ${value} y`)).toBe(`x ${value} y`);
+    const kept = withEnvVariable('SEALUP_SERVER=sftp://a@b/c\n', {
+      envName: 'SEALUP_SERVER',
+      value: 'sftp://other@host/www',
+    });
+    expect(kept).toEqual({ ok: true, added: false, text: 'SEALUP_SERVER=sftp://a@b/c\n' });
+  });
+
   it("writes a file's content (the sam-sync conversion's .env) so the reader gives it back", () => {
     const content = 'APP_NAME="My App"\nAPP_KEY=base64:c2VjcmV0\nDB_PASSWORD=\'p#w\'\n';
     const edit = withEnv('SEALUP_PASSWORD=secret-pw\n', 'APP_ENV', content, 'file');
@@ -162,6 +181,56 @@ describe('newConfigText: the minimal sealup.yml', () => {
     if (!loaded.ok) return;
     const [entry] = loaded.config.targets.values();
     expect(entry?.hostKey).toBe('missing');
+  });
+
+  // Decision 0045: a public repository keeps the server and its host key out of sealup.yml.
+  it('writes the server and the host key as references for a public repository, and loads them', async () => {
+    const server = 'sftp://deploy@ssh.example.com/home/site/www';
+    const text = newConfigText({ server, upload: 'dist', hostKey: keyLine, publicRepo: true });
+    expect(text).toBe(
+      [
+        `server: $\{SEALUP_SERVER}`,
+        `password: $\{SEALUP_PASSWORD}`,
+        `hostKey: $\{SEALUP_HOST_KEY}`,
+        'upload: dist',
+        '',
+      ].join('\n'),
+    );
+    const folder = mkdtempSync(join(tmpdir(), 'sealup new config '));
+    folders.push(folder);
+    const file = join(folder, 'sealup.yml');
+    writeFileSync(file, text);
+    const loaded = await loadConfig(file, {
+      SEALUP_PASSWORD: 'secret-pw',
+      SEALUP_SERVER: server,
+      SEALUP_HOST_KEY: keyLine,
+    });
+    expect(loaded.ok).toBe(true);
+    if (!loaded.ok) return;
+    const [entry] = loaded.config.targets.values();
+    expect(entry?.ok === true && entry.target.server.host).toBe('ssh.example.com');
+    expect(entry?.hostKey).toBe('saved');
+  });
+
+  it('keeps the placeholder without a key, and no key line for FTP, for a public repository', () => {
+    const sftp = newConfigText({
+      server: 'sftp://deploy@ssh.example.com/www',
+      upload: 'dist',
+      publicRepo: true,
+    });
+    expect(sftp.split('\n').slice(0, 3)).toEqual([
+      `server: $\{SEALUP_SERVER}`,
+      `password: $\{SEALUP_PASSWORD}`,
+      hostKeyPlaceholder,
+    ]);
+    const ftp = newConfigText({
+      server: 'ftp://deploy@ftp.example.com/www',
+      upload: 'dist',
+      publicRepo: true,
+    });
+    expect(ftp).toBe(
+      [`server: $\{SEALUP_SERVER}`, `password: $\{SEALUP_PASSWORD}`, 'upload: dist', ''].join('\n'),
+    );
   });
 
   it('quotes a value YAML would read otherwise, and loads as written', async () => {

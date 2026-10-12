@@ -13,15 +13,15 @@
 //   sealup 0.1.0 · sealup.yml · 2 targets: production, staging
 //
 //   Deploy
-//     sealup deploy production      send changes to https://example.com
-//     sealup deploy staging         send changes to 203.0.113.10
-//     sealup deploy -n production   dry run: list every change, change nothing
+//     sealup deploy production             send changes to https://example.com
+//     sealup deploy staging                send changes to 203.0.113.10
+//     sealup deploy --dry-run production   dry run: list every change, change nothing
 //
 //   Copy user uploads to this machine
-//     sealup pull production        www/resources → public_html/resources
+//     sealup pull production               www/resources → public_html/resources
 //
 //   Check
-//     sealup check                  sealup.yml and its variables, offline
+//     sealup check                         sealup.yml and its variables, offline
 //
 //   All commands, config keys and exit codes: sealup help
 
@@ -39,15 +39,15 @@ const s05 = [
   '  sealup 0.0.0-source · sealup.yml · 2 targets: production, staging',
   '',
   '  {b}Deploy{/}',
-  '    sealup deploy production      send changes to https://example.com',
-  '    sealup deploy staging         send changes to 203.0.113.10',
-  '    sealup deploy -n production   dry run: list every change, change nothing',
+  '    sealup deploy production             send changes to https://example.com',
+  '    sealup deploy staging                send changes to 203.0.113.10',
+  '    sealup deploy --dry-run production   dry run: list every change, change nothing',
   '',
   '  {b}Copy user uploads to this machine{/}',
-  '    sealup pull production        www/resources → public_html/resources',
+  '    sealup pull production               www/resources → public_html/resources',
   '',
   '  {b}Check{/}',
-  '    sealup check                  sealup.yml and its variables, offline',
+  '    sealup check                         sealup.yml and its variables, offline',
   '',
   '  All commands, config keys and exit codes: sealup help',
 ];
@@ -85,7 +85,7 @@ describe('S05: help for this project', () => {
           '',
           '  {b}Deploy{/}',
           '    sealup deploy                 send changes to https://example.com',
-          '    sealup deploy -n              dry run: list every change, change nothing',
+          '    sealup deploy --dry-run       dry run: list every change, change nothing',
           '',
           '  {b}Check{/}',
           '    sealup check                  sealup.yml and its variables, offline',
@@ -121,8 +121,8 @@ describe('S05: help for this project', () => {
       '  sealup 0.0.0-source · site/sealup.yml · 1 target: production',
       '',
       '  Deploy',
-      '    sealup deploy -c site/sealup.yml      send changes to https://example.com',
-      '    sealup deploy -n -c site/sealup.yml   dry run: list every change, change nothing',
+      '    sealup deploy -c site/sealup.yml             send changes to https://example.com',
+      '    sealup deploy --dry-run -c site/sealup.yml   dry run: list every change, change nothing',
     ]);
     expect(run.exitCode).toBe(0);
   });

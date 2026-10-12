@@ -11,8 +11,8 @@
 //   password's (the same forms are masked once).
 // - The file counts are this fixture's (2 and 2; the page shows 1,322 and 4,540): the smallest
 //   tree that still shows each folder counted without its excluded files.
-// - The last line names the target: with two targets `sealup deploy -n` alone stops with exit 2
-//   (target-not-named), so the command to copy is `sealup deploy -n production`.
+// - The last line names the target: with two targets `sealup deploy --dry-run` alone stops with exit 2
+//   (target-not-named), so the command to copy is `sealup deploy --dry-run production`.
 //
 // Page form (terminal):
 //   ✓ sealup.yml is valid
@@ -23,7 +23,7 @@
 //   ✓ Host keys saved for production and staging
 //
 //   ✓ Ready to deploy to production. staging needs STAGING_KEY first.
-//     Checked offline. A dry run also checks the server: sealup deploy -n
+//     Checked offline. A dry run also checks the server: sealup deploy --dry-run
 
 import { describe, expect, it } from 'vitest';
 import { canaries, goldenText } from '../../../src/testkit/index.ts';
@@ -46,7 +46,7 @@ const s06 = (from: string) => [
   '  {g}✓{/} Host keys saved for production and staging',
   '',
   '  {gb}✓ Ready to deploy to production.{/} staging needs STAGING_KEY first.',
-  '    {d}Checked offline. A dry run also checks the server: sealup deploy -n production{/}',
+  '    {d}Checked offline. A dry run also checks the server: sealup deploy --dry-run production{/}',
 ];
 
 // The GitHub form (page S06 `ci`): the masks of the password first (here the canary, so the leak

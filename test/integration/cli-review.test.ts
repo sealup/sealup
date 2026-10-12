@@ -1,4 +1,4 @@
-// main(argv, env, io) (spec #1, seam 2): the review step. `-n` shows every change and the
+// main(argv, env, io) (spec #1, seam 2): the review step. `--dry-run` shows every change and the
 // command that applies it; `-v` lists every change on a real run, with a timing line (spec
 // stories 23, 26-30; decision 0024 §4, §7). Every run here goes through the leak check.
 
@@ -100,14 +100,14 @@ describe('-v on a real run', () => {
   });
 });
 
-describe('-n, --dry-run', () => {
+describe('--dry-run', () => {
   it('puts the delete note on its own line when the count would push it past 80 columns', async () => {
     const files: Record<string, string> = { 'public_html/index.html': 'v1' };
     for (let i = 0; i < 10; i++) files[`public_html/old${i}.js`] = 'v1';
     const s = await deployed(files);
     for (let i = 0; i < 10; i++) rmSync(s.at(`public_html/old${i}.js`));
 
-    const run = await runMain(['deploy', '-n'], { cwd: s.root, env, server: s.server });
+    const run = await runMain(['deploy', '--dry-run'], { cwd: s.root, env, server: s.server });
 
     const lines = run.stderr.split('\n');
     for (const line of lines) expect(line.length).toBeLessThanOrEqual(80);
@@ -142,7 +142,7 @@ describe('-n, --dry-run', () => {
 
   it('says nothing would change when the server is up to date', async () => {
     const s = await deployed({ 'public_html/index.html': 'v1' });
-    const run = await runMain(['deploy', '-n'], { cwd: s.root, env, server: s.server });
+    const run = await runMain(['deploy', '--dry-run'], { cwd: s.root, env, server: s.server });
     expect(run.exitCode).toBe(0);
     expect(run.stderr.split('\n').slice(5)).toEqual([
       '  Nothing would change.',
@@ -159,7 +159,7 @@ describe('-n, --dry-run', () => {
       'my site/public_html/index.html': 'x',
     }).root;
     const server = createMemoryServer();
-    const run = await runMain(['deploy', '-n', '-c', 'my site/sealup.yml'], {
+    const run = await runMain(['deploy', '--dry-run', '-c', 'my site/sealup.yml'], {
       cwd: root,
       env,
       server,
@@ -172,7 +172,7 @@ describe('-n, --dry-run', () => {
   it('shows a path too long for its line in full, over several lines inside 80 columns', async () => {
     const deep = `${'a-rather-long-folder-name/'.repeat(4)}${'file-name-'.repeat(5)}.js`;
     const project = createProject(productionConfig(), { [`public_html/${deep}`]: 'x' });
-    const run = await runMain(['deploy', '-n'], {
+    const run = await runMain(['deploy', '--dry-run'], {
       cwd: project.root,
       env,
       server: createMemoryServer(),
@@ -190,21 +190,50 @@ describe('-n, --dry-run', () => {
   });
 });
 
+describe('-n (decision 0044: --dry-run only)', () => {
+  it.each([['deploy'], ['pull'], ['init']])(
+    'is an unknown flag for %s: exit 2, nothing changed',
+    async (command) => {
+      const s = await deployed({ 'public_html/index.html': 'v1' });
+      writeFileSync(s.at('public_html/index.html'), 'v2');
+      const files = s.server.files();
+
+      const run = await runMain([command, '-n'], { cwd: s.root, env, server: s.server });
+
+      expect(run.exitCode).toBe(2);
+      expect(run.stderr).toContain('✗ Unknown flag -n.');
+      expect(run.stderr).not.toContain('DRY RUN');
+      expect(s.server.files()).toEqual(files);
+    },
+  );
+
+  it('is no dry run in the JSON object either', async () => {
+    const root = createProject(productionConfig(), { 'public_html/index.html': 'x' }).root;
+    const run = await runMain(['deploy', '-n', '--json'], {
+      cwd: root,
+      env,
+      server: createMemoryServer(),
+    });
+    expect(run.exitCode).toBe(2);
+    expect(JSON.parse(run.stdout)).toMatchObject({ dryRun: false, error: { code: 'usage' } });
+  });
+});
+
 describe('--help (ruling 8: what works now, in the page wording)', () => {
-  it('lists -n, --json and -v, and the dry run example', async () => {
+  it('lists --dry-run, --json and -v, and the dry run example', async () => {
     const root = createProject(productionConfig(), {}).root;
     const run = await runMain(['--help'], { cwd: root });
     expect(run.stdout).toContain(
       [
         '  -c, --config <file>     Use this config file (default: sealup.yml)',
         '      --env-file <file>   Read variables from this file (default: sealup.env)',
-        '  -n, --dry-run           Show every change, change nothing',
+        '      --dry-run           Show every change, change nothing',
         '      --json              Print one JSON object on stdout',
         '  -v, --verbose           Show the file list and timings',
         '  -q, --quiet             Show the result line only',
         '      --no-color          No colour (NO_COLOR works too)',
       ].join('\n'),
     );
-    expect(run.stdout).toContain('  $ sealup deploy -n\n  $ sealup deploy production\n');
+    expect(run.stdout).toContain('  $ sealup deploy --dry-run\n  $ sealup deploy production\n');
   });
 });

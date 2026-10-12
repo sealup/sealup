@@ -1,5 +1,5 @@
 // Golden S10, "Dry run" (CLI page, docs/exploration/assets/06/scenarios-start-daily.js; notes
-// goldens.md). `sealup deploy -n production`, exit 0. Same lines, words, alignment, symbols and
+// goldens.md). `sealup deploy --dry-run production`, exit 0. Same lines, words, alignment, symbols and
 // colours as the page; names, counts and sizes from this fixture. No progress line, no ✓.
 //
 // Page form (14 uploads, 9 deletes, 1 kept, 5,839 unchanged; abridged):
@@ -76,7 +76,7 @@ const s10 = [
 
 // The log form (page S10 `ci`, without GitHub's masks; spec #24 decision 27): the version line
 // first, then the same lines; a dry run has no result, so no timing line. The page's version line
-// repeats -n: here it holds the command and the target only, never a flag (decision 27).
+// repeats the dry-run flag: here it holds the command and the target only, never a flag (decision 27).
 const s10log = (): string[] => ['sealup 0.0.0-source · deploy production', ...s10];
 
 // The JSON form (spec "--json object"; the page has none): one object on stdout, with every
@@ -169,7 +169,7 @@ describe('S10: dry run', () => {
     rmSync(at('public_html/admin/main.93c5b8e0.js'));
     before = server.files();
     foldersBefore = server.folders();
-    const argv = ['deploy', '-n', 'production'];
+    const argv = ['deploy', '--dry-run', 'production'];
     terminal = await runMain(argv, { ...options, tty: true, clock: steppedClock(0, 2_000) });
     log = await runMain(argv, { ...options, clock: steppedClock(0, 2_000) });
     json = await runMain([...argv, '--json'], { ...options, clock: steppedClock(0, 2_000) });

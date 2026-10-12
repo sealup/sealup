@@ -23,7 +23,11 @@ import { manifestStore } from '../src/manifest/index.ts';
 import {
   canaries,
   createMemoryServer,
+  expectHiddenMasked,
   expectNoLeaks,
+  githubLog,
+  githubMasks,
+  hiddenCanaries,
   splitMasks,
   steppedClock,
 } from '../src/testkit/index.ts';
@@ -200,8 +204,6 @@ interface MainOptions {
   readonly scanCertificate?: ScanCertificate;
   /** Ctrl-C: the AbortSignal main() is given. */
   readonly signal?: AbortSignal;
-  /** The release commit's SHA, as a release build gives main() (default: none, as from source). */
-  readonly releaseSha?: string;
   /** This machine's name, for the lock's note (default: the test machine's own). */
   readonly machine?: string;
   /**
@@ -209,6 +211,11 @@ interface MainOptions {
    * drops a connection does not wait the real 1 + 2 + 4 s.
    */
   readonly wait?: (ms: number, signal: AbortSignal | undefined) => Promise<void>;
+  /**
+   * More values the run must hide as it hides the hidden canaries (0045), by name: what the
+   * test's server shows of itself (its key, its certificate) when the target hides a part.
+   */
+  readonly hidden?: Readonly<Record<string, string>>;
 }
 
 /** No wait: a reconnect's tries come at once in tests. */
@@ -242,6 +249,8 @@ export function summaryFile(): string {
 /**
  * Runs `main()` in process with its streams captured, the canary secrets in its environment, and
  * the leak check on what it printed (GitHub's leading mask lines excepted) and on the job summary.
+ * The hidden canaries (a public repo's server and host key, 0045) are in its environment too:
+ * in GitHub's form, none may show once the log's masks apply; in any form, none in the summary.
  * A run in GitHub's form gets a fresh job summary file unless its environment names one. The
  * terminal's raw mode must be off again when main() returns.
  */
@@ -257,6 +266,7 @@ export async function runMain(argv: readonly string[], options: MainOptions): Pr
     argv,
     {
       ...canaries,
+      ...hiddenCanaries,
       ...options.env,
       ...(summaryPath === undefined ? {} : { GITHUB_STEP_SUMMARY: summaryPath }),
     },
@@ -271,7 +281,6 @@ export async function runMain(argv: readonly string[], options: MainOptions): Pr
       platform: options.platform ?? 'linux',
       clock: options.clock ?? steppedClock(0),
       ...(options.signal === undefined ? {} : { signal: options.signal }),
-      ...(options.releaseSha === undefined ? {} : { releaseSha: options.releaseSha }),
       ...(options.machine === undefined ? {} : { machine: options.machine }),
       wait: options.wait ?? noWait,
       connect: async (target, connectOptions) => {
@@ -298,6 +307,16 @@ export async function runMain(argv: readonly string[], options: MainOptions): Pr
   const human = github ? splitMasks(stderr).rest : stderr;
   const summary = summaryPath === undefined ? '' : readSummary(summaryPath);
   expectNoLeaks({ stdout, stderr: human, json: parseJson(stdout), summary });
+  // A server or host key read from a variable (0045): GitHub masks it, the summary never holds
+  // it; a terminal and a plain log show it whole (R22). A mask registered later in the log hides
+  // only what follows it; the `--json` object on stdout is written once the run is over.
+  const also = options.hidden ?? {};
+  if (github) {
+    const shown = githubMasks(stderr);
+    expectHiddenMasked({ stdout: shown(stdout), stderr: githubLog(stderr), summary }, also);
+  } else {
+    expectHiddenMasked({ summary }, also);
+  }
   return { exitCode, stdout, stderr, summary };
 }
 

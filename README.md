@@ -1,4 +1,16 @@
-# sealup
+<h1>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://sealup.dev/brand/sealup-wordmark-on-dark.svg">
+    <img src="https://sealup.dev/brand/sealup-wordmark.svg" alt="sealup" width="180">
+  </picture>
+</h1>
+
+<p>
+  <a href="https://github.com/sealup/sealup/actions/workflows/ci.yml"><img src="https://github.com/sealup/sealup/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://www.npmjs.com/package/sealup"><img src="https://img.shields.io/npm/v/sealup" alt="npm version"></a>
+  <a href="https://scorecard.dev/viewer/?uri=github.com/sealup/sealup"><img src="https://api.scorecard.dev/projects/github.com/sealup/sealup/badge" alt="OpenSSF Scorecard"></a>
+  <a href="https://github.com/sealup/sealup/blob/main/LICENSE"><img src="https://img.shields.io/badge/licence-MIT-blue" alt="Licence: MIT"></a>
+</p>
 
 **Seal it up, send it off:** sealup deploys your site, fast and safe, from your machine or CI to any hosting you can reach over SFTP, SSH or FTP, with one config and no secrets in the repo.
 
@@ -27,16 +39,16 @@ A first deploy of 1,200 files over SFTP, exactly as sealup prints it in its own 
 On your machine, in your project (Node.js 24 or later):
 
 ```sh
-npx sealup init        # asks for the server, checks its host key, writes sealup.yml
-npx sealup deploy -n   # dry run: lists every change, changes nothing
+npx sealup init               # asks for the server, checks its host key, writes sealup.yml
+npx sealup deploy --dry-run   # dry run: lists every change, changes nothing
 npx sealup deploy
 ```
 
-In GitHub Actions, after your build step. `sealup init` writes this workflow for you, pinned to the release's full commit SHA; each release's notes give the line ready to copy:
+In GitHub Actions, after your build step. `sealup init` writes this workflow for you, pinned to the release's version (releases are immutable, so the tag can't move); each release's notes give the line ready to copy:
 
 <!-- x-release-please-start-version -->
 ```yaml
-- uses: sealup/sealup@<commit SHA> # v0.1.1
+- uses: sealup/sealup@v0.2.0
   id: sealup
   env:
     SEALUP_PASSWORD: ${{ secrets.SEALUP_PASSWORD }}
@@ -58,8 +70,8 @@ upload:
   api: api
 exclude:
   - '**/*.map'
-write:
-  api/.env: ${API_ENV}   # a file built from a secret, never on disk
+write:                   # files put on the server from a secret, on each deploy
+  api/.env: ${API_ENV}   # the whole production .env in one secret, never on disk
 pull:
   www/uploads: uploads   # brought back by `sealup pull`
 ```
@@ -88,7 +100,7 @@ To verify a release:
 <!-- x-release-please-start-version -->
 ```sh
 npm audit signatures                                     # in a project that installed sealup
-v=0.1.1                                                  # the release to check
+v=0.2.0                                                  # the release to check
 gh release download v$v --repo sealup/sealup --pattern "sealup-$v.tgz"
 gh release verify v$v --repo sealup/sealup
 gh release verify-asset v$v sealup-$v.tgz --repo sealup/sealup

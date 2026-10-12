@@ -4,7 +4,7 @@
 // output samples come from src/home/samples.ts (checked against help and the goldens by
 // test/home.test.ts), the Action step and the version from the release facts of this build
 // (scripts/release-page.ts). Every other page is Starlight's; this one keeps round 4's own header
-// and footer, and follows the theme chosen on the docs.
+// and footer, and shares the docs' theme switch and its choice (src/components/ThemeSwitch.astro).
 import onest400 from '@fontsource/onest/files/onest-latin-400-normal.woff2?url';
 import outfit700 from '@fontsource/outfit/files/outfit-latin-700-normal.woff2?url';
 import plexMono500 from '@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2?url';
@@ -12,6 +12,8 @@ import plexMono600 from '@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-600
 import wordmarkOnDark from '../assets/sealup-wordmark-on-dark.svg?url';
 import wordmark from '../assets/sealup-wordmark.svg?url';
 import OutputLine from '../components/OutputLine.astro';
+import { Icon } from '@astrojs/starlight/components';
+import ThemeSwitch from '../components/ThemeSwitch.astro';
 import release from '../generated/release.json';
 import { cells, inline, plain } from '../home/lines.ts';
 import { commands, config, home, progressAt, progressTotals, target } from '../home/samples.ts';
@@ -57,7 +59,7 @@ const step = release.step.split('\n').map(yamlParts);
     <title>sealup — Push to main. Site updated.</title>
     <meta
       name="description"
-      content="sealup deploys a built site to any hosting you can reach over SFTP, SSH or FTP, including the cheapest plan. Only changed files travel, never a half-written file, no secrets in the repo."
+      content="Deploy a built site to any hosting you can reach over SFTP, SSH or FTP, including the cheapest plan. Only changed files travel, never a half-written file, no secrets in the repo."
     />
     <link rel="canonical" href="https://sealup.dev/" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
@@ -86,8 +88,11 @@ const step = release.step.split('\n').map(yamlParts);
         <span class="ver">{version}</span>
         <nav aria-label="Site">
           <a href="/getting-started/">Docs</a>
-          <a href="https://github.com/sealup/sealup">GitHub</a>
+          <a class="github" href="https://github.com/sealup/sealup" aria-label="GitHub" title="GitHub">
+            <Icon name="github" size="20px" />
+          </a>
         </nav>
+        <ThemeSwitch />
       </div>
     </header>
 
@@ -99,7 +104,7 @@ const step = release.step.split('\n').map(yamlParts);
           <span class="eyebrow">Open source · GitHub Action and CLI</span>
           <h1 id="h1">Push to main.<br />Site updated.</h1>
           <p class="lede">
-            sealup deploys a built site to any hosting you can reach over SFTP, SSH or FTP, including
+            Deploy a built site to any hosting you can reach over SFTP, SSH or FTP, including
             the cheapest plan with nothing on it to help you. One small file. No secrets in the repo.
           </p>
           <div class="install">
@@ -251,6 +256,7 @@ const step = release.step.split('\n').map(yamlParts);
                 <p>
                   <code>{'${VAR}'}</code> is read from the environment: <code>sealup.env</code> on your
                   machine, a repository secret in CI. The host key means a run talks only to your server.
+                  A public repo can keep the server and the host key out of git too: <code>{commands.init}</code> asks.
                 </p>
               </div>
               <div class="note">
@@ -449,7 +455,7 @@ const step = release.step.split('\n').map(yamlParts);
                   <p><b>Redeploy.</b> Nothing changed, so nothing travels. The file list on the server says so.</p>
                 </div>
               </div>
-              <p class="method">Measured on OVH shared hosting in October 2026, with a PHP API and an Angular build.</p>
+              <p class="method">Measured on a low-cost shared hosting plan, with a PHP API and an Angular build.</p>
             </div>
             <div class="diagram" role="figure" aria-label="Two timelines: one request at a time against 64 requests in flight">
               <div class="lane">

@@ -84,7 +84,7 @@ export interface PullRequest {
   readonly config: ResolvedConfig;
   /** The target named on the command line, if any. */
   readonly target: string | undefined;
-  /** `-n`: list and compare, write nothing. */
+  /** `--dry-run`: list and compare, write nothing. */
   readonly dryRun?: boolean;
   /** R21's limits; pullLimits unless a test sets lower ones. */
   readonly limits?: PullLimits;

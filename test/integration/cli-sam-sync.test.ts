@@ -59,6 +59,7 @@ describe('the offer, on a terminal', () => {
       enter,
       'n',
       enter,
+      enter,
       password,
       enter,
     ]);
@@ -82,6 +83,7 @@ describe('the offer, on a terminal', () => {
       'sftp://deploy@ssh.example.com/home/site/www',
       enter,
       'y',
+      enter,
       enter,
       password,
       enter,
@@ -114,7 +116,7 @@ describe('the offer, on a terminal', () => {
     const root = newProject(samSyncProject());
     const run = await terminal(
       root,
-      ['public_html', enter, 'y', enter, password, enter],
+      ['public_html', enter, 'y', enter, enter, password, enter],
       ['init', '--server', 'sftp://deploy@ssh.example.com/home/site/www'],
     );
     expect(run.exitCode, run.stderr).toBe(0);
@@ -124,7 +126,7 @@ describe('the offer, on a terminal', () => {
   it('asks for the password when the files hold none, and keeps the rest', async () => {
     const { password: _, ...noPassword } = samSyncDeployment;
     const root = newProject(samSyncProject(noPassword, null));
-    const run = await terminal(root, ['y', enter, 'y', enter, password, enter]);
+    const run = await terminal(root, ['y', enter, 'y', enter, enter, password, enter]);
     expect(run.exitCode, run.stderr).toBe(0);
     const screen = screenOf(run.stderr);
     expect(screen).toContain('    1 secret        APP_ENV (api/.env.prod)\n');
@@ -295,7 +297,7 @@ describe('the converted project', () => {
     const converted = await runMain(['init'], {
       cwd: root,
       tty: true,
-      keys: ['y', enter, 'y', enter],
+      keys: ['y', enter, 'y', enter, enter],
       scan: createMemoryServer().scanHostKey,
     });
     expect(converted.exitCode, converted.stderr).toBe(0);
@@ -315,6 +317,49 @@ describe('the converted project', () => {
       'sealup.yml': readFileSync(join(root, 'sealup.yml'), 'utf8'),
       workflow: readFileSync(join(root, '.github', 'workflows', 'deploy.yml'), 'utf8'),
     });
+  });
+
+  // Decision 0045: the conversion asks the public question too, with the same result.
+  it('in a public repository: the server and key from sealup.env, then deploys', async () => {
+    const root = newProject(samSyncProject());
+    const converted = await runMain(['init'], {
+      cwd: root,
+      tty: true,
+      keys: ['y', enter, 'y', enter, 'y', enter],
+      scan: createMemoryServer().scanHostKey,
+      env: { NO_COLOR: '1' },
+    });
+    expect(converted.exitCode, converted.stderr).toBe(0);
+    const screen = screenOf(converted.stderr);
+    expect(screen).toContain(
+      '  Save it to sealup.yml as hostKey? [y/N] y\n\n  Anyone can read sealup.yml in a public repository.',
+    );
+    expect(screen).toContain('  Is this repository public? [y/N] y\n');
+    expect(screen).toContain(
+      '  On GitHub, add the secrets SEALUP_PASSWORD, APP_ENV, SEALUP_SERVER and SEALUP_HOST_KEY:\n  Settings › Secrets and variables › Actions › New repository secret\n  Copy each value from sealup.env.\n',
+    );
+    const config = readFileSync(join(root, 'sealup.yml'), 'utf8');
+    expect(config.split('\n').slice(0, 4)).toEqual([
+      `server: $\{SEALUP_SERVER}`,
+      `password: $\{SEALUP_PASSWORD}`,
+      `hostKey: $\{SEALUP_HOST_KEY}`,
+      'upload:',
+    ]);
+    expect(parseEnv(readFileSync(join(root, 'sealup.env'), 'utf8'))).toEqual({
+      SEALUP_PASSWORD: password,
+      APP_ENV: appEnv,
+      SEALUP_SERVER: 'sftp://deploy@ssh.example.com/home/site',
+      SEALUP_HOST_KEY: hostKeyLine,
+    });
+    const workflow = readFileSync(join(root, '.github', 'workflows', 'deploy.yml'), 'utf8');
+    for (const name of ['SEALUP_PASSWORD', 'APP_ENV', 'SEALUP_SERVER', 'SEALUP_HOST_KEY']) {
+      expect(workflow).toContain(`          ${name}: $\{{ secrets.${name} }}\n`);
+    }
+
+    const server = createMemoryServer({ loginFolder: '/home/deploy', quick: true });
+    const deployed = await runMain(['deploy'], { cwd: root, server });
+    expect(deployed.exitCode, deployed.stderr).toBe(0);
+    expect(siteFiles(server)).toEqual(['api/.env', 'api/index.php', 'www/index.html']);
   });
 
   // Decision 0038: a `~/` prefix becomes a `/~` target; the default manifest sits beside www/.

@@ -121,11 +121,11 @@ describe('sealup pull', () => {
     }
   });
 
-  it('-n lists each download under its reason and writes nothing', async () => {
+  it('--dry-run lists each download under its reason and writes nothing', async () => {
     const server = createMemoryServer();
     const project = pullProject(server);
     writeFileSync(join(project.root, 'public_html/resources/logo.png'), 'my own edit');
-    const run = await pullFrom(server, project.root, ['-n']);
+    const run = await pullFrom(server, project.root, ['--dry-run']);
     const label = '{inv} DRY RUN {/}';
     expect(screenOf(run.stderr)).toBe(
       goldenText(
@@ -438,7 +438,7 @@ describe('sealup pull: the other ways it ends', () => {
   it('--json gives a pull object: downloaded, already here, bytes; a dry run its downloads', async () => {
     const server = createMemoryServer();
     const project = pullProject(server);
-    const dry = await pullFrom(server, project.root, ['-n', '--json']);
+    const dry = await pullFrom(server, project.root, ['--dry-run', '--json']);
     expect(JSON.parse(dry.stdout)).toEqual({
       format: 1,
       version: '0.0.0-source',

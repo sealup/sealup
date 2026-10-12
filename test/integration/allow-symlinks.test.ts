@@ -57,7 +57,7 @@ describe('allow: [symlinks], links in a source folder', () => {
     const project = laravel();
     const server = createMemoryServer({ loginFolder: '/home/deploy' });
 
-    const run = await runMain(['deploy', '-n', 'production'], {
+    const run = await runMain(['deploy', '--dry-run', 'production'], {
       cwd: project.root,
       env,
       server,
@@ -115,7 +115,7 @@ describe('allow: [symlinks], links in a source folder', () => {
     ].join('\n');
     const at = { cwd: project.root, env: { ...env, ...inGitHub } };
 
-    const dry = await runMain(['deploy', '-n', 'production'], {
+    const dry = await runMain(['deploy', '--dry-run', 'production'], {
       ...at,
       server: createMemoryServer({ loginFolder: '/home/deploy' }),
     });
@@ -220,7 +220,7 @@ describe('allow: [symlinks], links on the server', () => {
     expect((await site.run()).outcome.exitCode).toBe(0);
     await replaceByLink(site, '/home/site/config.php', [], []);
     site.remove('public_html/config.php');
-    const dry = await runMain(['deploy', '-n', 'production'], {
+    const dry = await runMain(['deploy', '--dry-run', 'production'], {
       cwd: site.root,
       env,
       server: site.server,

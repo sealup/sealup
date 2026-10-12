@@ -69,4 +69,4 @@ targets:
     allow: [root-folder]
 ```
 
-Run a dry run first (`sealup deploy -n --mirror`): it lists every file the mirror would delete.
+Run a dry run first (`sealup deploy --dry-run --mirror`): it lists every file the mirror would delete.

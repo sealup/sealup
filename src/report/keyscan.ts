@@ -1,7 +1,8 @@
 // The words of `sealup keyscan` (S04, spec #24 decision 18): the target block with the key's
 // state, then by state: the comparison to make before a yes, the line to paste, the key saved,
-// or S17's two fingerprints when the server shows another key than the saved one. Pure (import
-// rules, pure file): no node: import.
+// or S17's two fingerprints when the server shows another key than the saved one. A hostKey read
+// from a variable asks nothing: the line and the variable to set (plan 06 spec #88 decision 8).
+// Pure (import rules, pure file): no node: import.
 
 import type { ConfigPlace, KeyscanReport, Problem, ServerUrl } from '../contracts/index.ts';
 import {
@@ -15,6 +16,7 @@ import {
   targetLine,
 } from './format.ts';
 import type { Explained } from './problems.ts';
+import { keyInVariable, setVariableLines } from './variable-words.ts';
 
 /** One step of a keyscan's output, in the order cli prints them. */
 export type KeyscanStep =
@@ -40,6 +42,11 @@ export type KeyscanStep =
       readonly asking: boolean;
       readonly where: 'github' | 'log';
       readonly again: readonly string[];
+      /**
+       * The variable `hostKey` reads (`${NAME}`): nothing is asked or saved, and a key not saved
+       * is shown with the variable to set (plan 06 spec #88 decision 8).
+       */
+      readonly variable?: string;
     }
   /** The key now in the file, on `line`. */
   | { readonly kind: 'saved'; readonly report: KeyscanReport; readonly line: number }
@@ -77,7 +84,9 @@ export function keyscanLines(step: KeyscanStep, quote: (word: string) => string)
     case 'gap':
       return [[]];
     case 'found':
-      return foundLines(step.report, step.asking, step.where, command(step.again));
+      return step.variable === undefined
+        ? foundLines(step.report, step.asking, step.where, command(step.again))
+        : inVariableLines(step.report, step.variable);
     case 'saved': {
       const file = fileName(step.report.configFile);
       return [
@@ -180,6 +189,42 @@ function foundLines(
   }
 }
 
+/**
+ * The key's line of the target block, then, for a hostKey read from `variable`: already saved,
+ * the line and the variable to set, or (another key) nothing: the problem follows.
+ */
+function inVariableLines(report: KeyscanReport, variable: string): Line[] {
+  const { shown } = report;
+  const file = fileName(report.configFile);
+  const head = `${hostKeyLabel}${shown.fingerprint}  `;
+  switch (report.state) {
+    case 'same':
+      return [
+        [head, style('saved', 'green')],
+        [],
+        [
+          '  ',
+          style('✓ Already saved:', 'boldGreen'),
+          ` ${variable} holds this key (hostKey${lineOf(report.saved?.place.line)}).`,
+        ],
+      ];
+    case 'not-saved':
+      return [
+        [head, style('not saved', 'yellow')],
+        [],
+        [`  Nothing was saved: ${file} reads hostKey from a variable, which sealup`],
+        ["  never writes. Compare the fingerprint with your host's control panel,"],
+        [`  then set ${variable} to this line in sealup.env and in CI:`],
+        [],
+        [`  ${shown.line}`],
+        [],
+        ['  ', style(`More: sealup.dev/e/${keyInVariable}`, 'dim')],
+      ];
+    case 'other':
+      return [[head, style('changed', 'boldRed')], []];
+  }
+}
+
 /** The line to paste into sealup.yml. */
 function pasteLine(report: KeyscanReport): Line {
   return [`  hostKey: ${report.shown.line}`];
@@ -217,6 +262,22 @@ export function explainNotReplaced(
 ): Explained {
   const file = fileName(problem.configFile);
   const command = `sealup keyscan ${problem.target}`;
+  const facts = {
+    server: problem.server,
+    shown: problem.received,
+    saved: { key: problem.expected, place: problem.place },
+  };
+  if (problem.variable !== undefined) {
+    return {
+      title: `The server's host key changed. ${file} was not changed.`,
+      details: [
+        ...changedLines(facts, file),
+        ...setVariableLines('hostKey', file, problem.variable, problem.received.line),
+      ],
+      state: ['Nothing was changed.'],
+      slug: keyInVariable,
+    };
+  }
   if (problem.asked) {
     return {
       title: `The saved host key was kept: ${file} was not changed.`,
@@ -228,11 +289,6 @@ export function explainNotReplaced(
       slug: 'host-key-not-replaced',
     };
   }
-  const facts = {
-    server: problem.server,
-    shown: problem.received,
-    saved: { key: problem.expected, place: problem.place },
-  };
   return {
     title: `The server's host key changed. ${file} was not changed.`,
     details: [

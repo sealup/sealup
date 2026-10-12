@@ -43,7 +43,8 @@ export function printNotWritten(out: Out, title: string, error: unknown): void {
 /**
  * The first lines of a log form (0024 §9). In GitHub's, an `::add-mask::` line for each form of
  * each secret (R2), before any other byte: these lines are the one place sealup writes a secret,
- * so they skip redaction by name, here, and nowhere else. Then `sealup <version> · <command>
+ * so they skip redaction by name, here, and nowhere else. The values read from a variable that a
+ * public repo hides (decision 0045) are masked the same way. Then `sealup <version> · <command>
  * [target]` (spec #24 decision 27), so an old log says which version ran: never a flag or a
  * value typed on the command line (cli gives only a command it knows and a target name).
  * Nothing on a terminal.
@@ -56,16 +57,29 @@ export function printLogStart(
     readonly command?: string;
     readonly target?: string;
     readonly secrets: readonly Secret[];
+    /** Values masked in GitHub's form only, after the secrets (decision 0045). */
+    readonly hidden?: readonly string[];
   },
 ): void {
   if (form === 'terminal') return;
-  if (form === 'github') {
-    for (const value of secretForms(start.secrets))
-      out.write(`${command('add-mask', {}, value)}\n`);
-  }
+  if (form === 'github') writeMasks(out, secretForms(start.secrets, start.hidden));
   const words = [start.command, start.target].filter((word) => word !== undefined);
   const typed = words.length === 0 ? '' : ` · ${words.map(shellWord).join(' ')}`;
   writeLines(out, [[`sealup ${start.version}${typed}`]]);
+}
+
+/** One `::add-mask::` line for each value, as it is: never through redaction. */
+function writeMasks(out: Out, values: readonly string[]): void {
+  for (const value of values) out.write(`${command('add-mask', {}, value)}\n`);
+}
+
+/**
+ * GitHub's mask lines for what a server showed of itself during the run, for a target that hides
+ * a part (decision 0045): a changed host key, a certificate. They come before the first line that
+ * shows it, as the run learns it only once connected. Never a secret: those mask first (R2).
+ */
+export function printLateMasks(out: Out, values: readonly string[]): void {
+  writeMasks(out, secretForms([], values));
 }
 
 /**
@@ -120,7 +134,11 @@ export function printProjectHelp(
     site === undefined ? 'send changes' : `send changes to ${site}`,
   ]);
   const [first] = targets;
-  const dryRun = command('deploy', '-n', ...(one || first === undefined ? [] : [first.name]));
+  const dryRun = command(
+    'deploy',
+    '--dry-run',
+    ...(one || first === undefined ? [] : [first.name]),
+  );
   const check = command('check');
   // The pull block names the first target with pull entries, as the page's S05 does.
   const puller = targets.find(({ pulls }) => pulls.length > 0);

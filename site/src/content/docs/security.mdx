@@ -23,6 +23,52 @@ repository. The full policy, with how to report a flaw, is
 - The server is checked before your login is sent: the host key over SFTP and SSH, the TLS
   certificate over FTPS. FTPS never falls back to plain FTP.
 
+## A public repository
+
+Anyone can read the `sealup.yml` of a public repository. The password is only a variable's name
+there, but the server line gives away a login name and the server to try passwords on, and a
+host key can be looked up on search engines that index them, which finds the server again.
+
+So `sealup init` asks "Is this repository public?" (no by default). On yes, `sealup.yml` reads
+the server and the host key from variables, their values go to `sealup.env`, the workflow passes
+each one from a secret, and init's last screen names every secret to add:
+
+```yaml
+server: ${SEALUP_SERVER}
+password: ${SEALUP_PASSWORD}
+hostKey: ${SEALUP_HOST_KEY}
+upload: dist
+```
+
+| Variable | What it holds |
+|---|---|
+| `${SEALUP_SERVER}` | The whole server URL, user and folder included |
+| `${SEALUP_HOST_KEY}` | The host key line, over SFTP and SSH |
+| `${SEALUP_TLS_FINGERPRINT}` | A pinned FTPS certificate's SHA-256, as `tlsFingerprint`. `init` never pins a certificate, so this one is for a file you write yourself |
+
+Without a terminal, `init` asks nothing and keeps the server in the file. To switch a project
+by hand, see [`sealup.yml`](/config/#a-public-repository).
+
+- **In GitHub Actions, they are masked like a password:** the server, its user and its host,
+  the host key line and its fingerprint. The target line reads like
+  `sftp://***@***:22/home/site`, and the job summary names the variable (`${SEALUP_SERVER}`)
+  instead of the server. On your computer, the target line stays whole.
+- **GitHub masks a value wherever it appears in the log.** A user named like a common word,
+  such as `deploy` or `web`, hides that word in every other line too, however short it is. Give
+  the site a distinct deploy user, its own: the least-privilege advice anyway.
+- **`keyscan` never writes over a variable.** When the server's key changes, it prints the new
+  line and names the variable to update, in `sealup.env` and in CI
+  ([key-in-variable](/e/key-in-variable/)). If you did not save the host key during `init`,
+  write the reference yourself before you run it
+  ([how](/keyscan/#a-public-repository-without-a-saved-key)).
+
+Hiding the server takes away a stranger's head start; a strong password or a
+[private key](/private-keys/) is still what stops the guessing. It does not stop a person who
+can push: in the same commit, they can replace `${SEALUP_SERVER}` and `${SEALUP_HOST_KEY}` with
+their own server and its key, and the password goes there. What stops that is on GitHub's side:
+keep the password in a GitHub environment that only `main` may use (its deployment branches),
+and protect `main` with required review, so no change reaches it unseen.
+
 ## Your files
 
 - sealup writes and deletes only inside the folder you gave it. Every path, from your config,
@@ -81,12 +127,15 @@ build attestations against sealup's repository. `sha256sum` checks the downloade
 
 ## What you can do
 
-- Pin the action to a full commit SHA, as [`sealup init`](/init/) writes it (see
-  [the GitHub Action](/github-action/)).
+- Pin the action to a release's full version, as [`sealup init`](/init/) writes it: releases
+  are immutable, so the tag cannot move (see [the GitHub Action](/github-action/)).
 - Give each site its own deploy user, limited to the smallest folder it needs.
 - Prefer `sftp://` or `ssh://` with a [private key](/private-keys/) over FTP.
-- Keep production secrets in a GitHub environment, and make the server and host key `${NAME}`
-  references too, so a changed `sealup.yml` cannot send your password elsewhere.
+- Keep production secrets in a GitHub environment that only `main` may use, and require review
+  on `main`: that is what keeps a changed `sealup.yml` from sending your password to another
+  server, whether the server is written in it or read from a variable.
+- In a public repository, keep the server and the host key out of `sealup.yml`
+  ([A public repository](#a-public-repository)).
 - Report a flaw privately through
   [GitHub's security advisories](https://github.com/sealup/sealup/security/advisories/new),
   never in a public issue.

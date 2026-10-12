@@ -33,7 +33,7 @@ describe('sealup deploy --check-server', () => {
   it('lists the hand-edited file in the dry run as changed on the server', async () => {
     const site = await handEdited();
 
-    const run = await site.run(['deploy', '-n', '--check-server', '--json']);
+    const run = await site.run(['deploy', '--dry-run', '--check-server', '--json']);
 
     expect(run.exitCode).toBe(0);
     const lines = run.stderr.split('\n');

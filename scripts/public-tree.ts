@@ -2,9 +2,11 @@
 // module (no Node built-in): the caller lists the files and reads them; scripts/export-public.ts
 // is that caller.
 //
-// Two steps, and any problem in either stops the export:
+// Three steps, and any problem in any of them stops the export:
 //   1. an allow-list of paths: only what is listed below is public;
-//   2. a scan of each kept file, its path and its content, for denied strings.
+//   2. a check of the public CHANGELOG.md: its newest section is the version being released, and
+//      it links to no repo but the public one (decision 0042);
+//   3. a scan of each kept file, its path and its content, for denied strings.
 //
 // Changing a list below changes what is public: do it in the open, in its own commit.
 
@@ -225,6 +227,45 @@ function nameCheck(input: ExportInput): {
   };
 }
 
+/**
+ * The public changelog (decision 0042): `CHANGELOG.md` is written for the public repo, by hand at
+ * each release; release-please's full changelog stays private. Its newest section must be
+ * package.json's version, and its GitHub links must point at the public repo. Checked when the
+ * tree holds both files.
+ */
+function changelogErrors(input: ExportInput, files: readonly string[]): string[] {
+  if (!files.includes('CHANGELOG.md') || !files.includes('package.json')) return [];
+  let version: unknown;
+  try {
+    version = (JSON.parse(input.read('package.json')) as { version?: unknown }).version;
+  } catch {
+    return ['package.json: not JSON, so CHANGELOG.md cannot be checked against its version'];
+  }
+  const errors: string[] = [];
+  const lines = input.read('CHANGELOG.md').split(/\r?\n/);
+  // A release heading, as release-please and the hand-written sections spell it:
+  // `## [0.2.0](…compare…) (date)` or `## 0.1.0 (date)`.
+  const newest = lines
+    .map((line) => /^## \[?(\d+\.\d+\.\d+)\]?(?:[ (]|$)/.exec(line)?.[1])
+    .find((found) => found !== undefined);
+  if (newest !== version) {
+    errors.push(
+      `CHANGELOG.md: its newest section is ${newest ?? 'missing'}, not package.json's ${String(version)}; write ${String(version)}'s section first`,
+    );
+  }
+  lines.forEach((line, index) => {
+    // A repo name ends before a dot that ends the sentence; `.git` names the same repo.
+    for (const match of line.matchAll(/github\.com\/sealup\/([\w-]+(?:\.[\w-]+)*)/gi)) {
+      if (match[1]?.toLowerCase().replace(/\.git$/, '') !== 'sealup') {
+        errors.push(
+          `CHANGELOG.md:${index + 1}:${match.index + 1} links to a repo other than sealup/sealup`,
+        );
+      }
+    }
+  });
+  return errors;
+}
+
 /** The public tree of the private repo's files. */
 export function publicTree(input: ExportInput): PublicTree {
   const files: string[] = [];
@@ -238,6 +279,7 @@ export function publicTree(input: ExportInput): PublicTree {
       );
     }
   }
+  errors.push(...changelogErrors(input, files));
   return scan(input, files, errors, true);
 }
 

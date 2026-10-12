@@ -33,3 +33,5 @@ sealup keyscan production
 ```
 
 `keyscan` asks before it replaces a saved key. If the fingerprint is not your host's, do not deploy: tell your host.
+
+When `sealup.yml` reads the key from a variable (`hostKey: ${SEALUP_HOST_KEY}`, a public repository), there is nothing to commit: `keyscan` prints the new line, and you set the variable in `sealup.env` and in CI. See [The key is read from a variable](/e/key-in-variable/). In GitHub's log, the received key of such a target shows as `***`.

@@ -44,7 +44,7 @@ export type PullEvent =
       readonly type: 'start';
       readonly target: Target;
       readonly configFile: string;
-      /** `-n`: it lists and compares, then stops, writing nothing. */
+      /** `--dry-run`: it lists and compares, then stops, writing nothing. */
       readonly dryRun: boolean;
       /** What this pull risks without stopping, printed after the target block (S23). */
       readonly warnings: readonly RunWarning[];

@@ -12,13 +12,6 @@ import { ExitCode } from '../contracts/index.ts';
 import { connect, scanCertificate, scanHostKey } from '../transport/index.ts';
 import { type Keyboard, main, readVersion } from './index.ts';
 
-/**
- * The release commit's full SHA: put in by the public release build (scripts/build.ts
- * `--release-sha`, spec #41 decision 38); unset in any other build and from source.
- */
-declare const SEALUP_RELEASE_SHA: string | undefined;
-
-const releaseSha = typeof SEALUP_RELEASE_SHA === 'string' ? SEALUP_RELEASE_SHA : undefined;
 /** From the package.json beside the bundle, `dist/cli.mjs` (spec #41 decision 34). */
 const version = readVersion(new URL('../package.json', import.meta.url));
 
@@ -86,7 +79,6 @@ process.exitCode = await main(process.argv.slice(2), process.env, {
   scanCertificate,
   signal: interrupt.signal,
   ...(version === undefined ? {} : { version }),
-  ...(releaseSha === undefined ? {} : { releaseSha }),
 });
 process.off('SIGINT', onSignal);
 process.off('SIGTERM', onSignal);

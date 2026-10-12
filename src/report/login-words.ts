@@ -5,6 +5,7 @@ import type { ConfigPlace, Target, TransportError } from '../contracts/index.ts'
 import { keyType, lineOf, lineWord } from './format.ts';
 import type { Explained } from './problems.ts';
 import { serverSentence } from './server-words.ts';
+import { changedFixLines } from './variable-words.ts';
 
 /** How a target logs in, as the words name it: its variable and its place (decision 0033). */
 interface Login {
@@ -56,15 +57,7 @@ export function explainBeforeLogin(
           `  received  ${keyType(received.type)} ${received.fingerprint}`,
           'Either your host moved the site to a new server, or someone between you',
           'and the server is intercepting the connection.',
-          ...(ci
-            ? [
-                "Ask your host for the server's fingerprint. If it is the received one, on",
-                `your machine:  sealup keyscan ${target.name}   then commit ${file}.`,
-              ]
-            : [
-                "Ask your host for the server's fingerprint. If it is the received one:",
-                `  sealup keyscan ${target.name}   then commit ${file}.`,
-              ]),
+          ...changedFixLines('hostKey', target.fromVariables?.hostKey, target.name, file, ci),
         ],
         state: [`${loginNotSent(target)} ${nothing}`],
         slug: 'host-key-changed',

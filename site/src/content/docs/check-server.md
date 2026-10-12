@@ -10,7 +10,7 @@ the server by hand stays as it is until your build changes it.
 `--check-server` also looks at the server, and puts such files back:
 
 ```sh
-sealup deploy -n --check-server   # see what was changed by hand
+sealup deploy --dry-run --check-server   # see what was changed by hand
 sealup deploy --check-server
 ```
 

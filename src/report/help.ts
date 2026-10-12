@@ -54,7 +54,7 @@ const overview: readonly Line[] = [
   ...plain(
     '  -c, --config <file>     Use this config file (default: sealup.yml)',
     '      --env-file <file>   Read variables from this file (default: sealup.env)',
-    '  -n, --dry-run           Show every change, change nothing',
+    '      --dry-run           Show every change, change nothing',
     '      --json              Print one JSON object on stdout',
     '  -v, --verbose           Show the file list and timings',
     '  -q, --quiet             Show the result line only',
@@ -65,7 +65,7 @@ const overview: readonly Line[] = [
   ),
   [],
   heading('EXAMPLES'),
-  ...plain('  $ sealup init', '  $ sealup deploy -n', '  $ sealup deploy production'),
+  ...plain('  $ sealup init', '  $ sealup deploy --dry-run', '  $ sealup deploy production'),
   [],
   heading('LEARN MORE'),
   ...plain(
@@ -143,7 +143,7 @@ const deploy: readonly Line[] = [
   [],
   heading('FLAGS'),
   ...plain(
-    '  -n, --dry-run             Show every change, change nothing',
+    '      --dry-run             Show every change, change nothing',
     '      --mirror              Also delete server files sealup did not upload',
     '                            (minus excludes). Slower: lists the whole server',
     '      --check-server        Also put back files changed on the server',
@@ -161,7 +161,7 @@ const deploy: readonly Line[] = [
   [],
   heading('EXAMPLES'),
   ...plain(
-    '  $ sealup deploy -n                 # see what would change',
+    '  $ sealup deploy --dry-run          # see what would change',
     '  $ sealup deploy                    # the only target',
     '  $ sealup deploy staging            # one of several targets',
     '  $ sealup deploy production --json  # one JSON object on stdout',
@@ -192,7 +192,7 @@ const pull: readonly Line[] = [
   [],
   heading('FLAGS'),
   ...plain(
-    '  -n, --dry-run             List every file to download, change nothing',
+    '      --dry-run             List every file to download, change nothing',
     '',
     '  Global flags: -c, --env-file, --json, -v, -q, --no-color (sealup --help)',
   ),
@@ -207,7 +207,7 @@ const pull: readonly Line[] = [
   [],
   heading('EXAMPLES'),
   ...plain(
-    '  $ sealup pull -n                   # see what would come down',
+    '  $ sealup pull --dry-run            # see what would come down',
     '  $ sealup pull production           # one of several targets',
   ),
   [],
@@ -294,7 +294,7 @@ const check: readonly Line[] = [
   ),
   [],
   heading('LEARN MORE'),
-  ...plain('  sealup deploy -n          A dry run also checks the server.'),
+  ...plain('  sealup deploy --dry-run   A dry run also checks the server.'),
   dim('https://sealup.dev/check'),
 ];
 

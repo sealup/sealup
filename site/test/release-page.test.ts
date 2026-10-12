@@ -1,6 +1,6 @@
 // The release facts the site prints, generated at build time (spec #41 decision 40, story 96,
-// I-088): the GitHub Action page's step is pinned to the release commit's full SHA, as `sealup
-// init` writes it, and the verify commands name the version built, as SECURITY.md's do.
+// I-088): the sealup step by its version tag, as `sealup init` writes it (0043), and the verify
+// commands name the version built, as SECURITY.md's do.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -14,51 +14,47 @@ const sha = '0123456789abcdef0123456789abcdef01234567';
 const tagBuild = { GITHUB_REF_TYPE: 'tag', GITHUB_REF_NAME: 'v0.1.0', GITHUB_SHA: sha };
 
 describe('the release a build is for', () => {
-  it("is the tag's commit on a release tag's build (the public repo's pages.yml)", () => {
-    assert.deepEqual(releaseOf(tagBuild, '0.1.0'), { version: '0.1.0', sha });
+  it("is package.json's version, on a release tag's build (the public repo's pages.yml)", () => {
+    assert.deepEqual(releaseOf(tagBuild, '0.1.0'), { version: '0.1.0' });
   });
 
-  it('has no commit on any other build: a branch, a pull request, a laptop', () => {
+  it('is package.json\'s version on any other build: a branch, a pull request, a laptop', () => {
     const branch = { GITHUB_REF_TYPE: 'branch', GITHUB_REF_NAME: 'main', GITHUB_SHA: sha };
     assert.deepEqual(releaseOf(branch, '0.1.0'), { version: '0.1.0' });
     assert.deepEqual(releaseOf({}, '0.1.0'), { version: '0.1.0' });
   });
 
-  it("stops a tag build whose tag is not package.json's version, or whose SHA is not one", () => {
+  it("stops a tag build whose tag is not package.json's version", () => {
     assert.throws(() => releaseOf({ ...tagBuild, GITHUB_REF_NAME: 'v0.2.0' }, '0.1.0'), /v0\.2\.0/);
-    assert.throws(() => releaseOf({ ...tagBuild, GITHUB_SHA: 'abc' }, '0.1.0'), /SHA/);
   });
 });
 
-describe("the GitHub Action page's step", () => {
-  it('is pinned to the release commit, its tag in a comment', () => {
+describe('the sealup step', () => {
+  const env = ['  env:', `  ${'  '}SEALUP_PASSWORD: $\{{ secrets.SEALUP_PASSWORD }}`];
+
+  it("is by the version tag, then the password through env: (the home page's, no id)", () => {
     assert.equal(
-      actionStep({ version: '0.1.0', sha }),
-      [
-        `- uses: sealup/sealup@${sha} # v0.1.0`,
-        '  id: sealup',
-        '  env:',
-        `  ${'  '}SEALUP_PASSWORD: $\{{ secrets.SEALUP_PASSWORD }}`,
-      ].join('\n'),
+      actionStep({ version: '0.1.0' }),
+      ['- uses: sealup/sealup@v0.1.0', ...env].join('\n'),
     );
   });
 
-  // S02 holds what `sealup init` writes, both forms: the page's step must be init's, line for line.
+  it("has `id: sealup` for the Action page, which reads the step's url output", () => {
+    assert.equal(
+      actionStep({ version: '0.1.0' }, { id: true }),
+      ['- uses: sealup/sealup@v0.1.0', '  id: sealup', ...env].join('\n'),
+    );
+  });
+
+  // S02 holds what `sealup init` writes: the Action page's step must be init's, line for line.
   const s02 = expectedLines(
     readFileSync(join(repo, 'test', 'integration', 'goldens', 's02-init.test.ts'), 'utf8'),
   );
   const asInit = (step: string): string[] =>
     step.split('\n').map((line) => `      ${line}`).filter((line) => !s02.some((p) => p.test(line)));
 
-  it("is the step `sealup init` writes in a release build (S02's lines)", () => {
-    assert.deepEqual(asInit(actionStep({ version: '0.0.0-source', sha })), []);
-  });
-
-  it('without a release commit, is init\'s tag form, with the comment saying to pin it', () => {
-    const step = actionStep({ version: '0.1.0' });
-    assert.match(step, /^# Pin this step to v0\.1\.0's full commit SHA/);
-    assert.match(step, /^- uses: sealup\/sealup@v0\.1\.0$/m);
-    assert.deepEqual(asInit(actionStep({ version: '0.0.0-source' })), []);
+  it("with its id, is the step `sealup init` writes (S02's lines)", () => {
+    assert.deepEqual(asInit(actionStep({ version: '0.0.0-source' }, { id: true })), []);
   });
 });
 
@@ -68,10 +64,22 @@ describe('the GitHub Action page', () => {
     'utf8',
   );
 
-  it("shows the step written at build time, not one typed in", () => {
+  it("shows the step written at build time, with its id, not one typed in", () => {
     assert.match(page, /^import release from '\.\.\/\.\.\/generated\/release\.json';$/m);
-    assert.match(page, /<Code code=\{release\.step\} lang="yaml"/);
+    assert.match(page, /<Code code=\{release\.stepWithId\} lang="yaml"/);
     assert.doesNotMatch(page, /sealup\/sealup@[0-9a-f]{40}/);
+  });
+
+  // Decision 0043: the tag is safe because immutable releases lock it; the SHA form stays
+  // available for teams whose policy asks for one.
+  it('says how to pin it: by version, why that is safe, and the SHA form for strict policies', () => {
+    assert.match(page, /^## Pin it to a version$/m);
+    assert.doesNotMatch(page, /^## Pin it to a commit$/m);
+    assert.match(page, /immutable/i);
+    assert.match(page, /`@main`/);
+    assert.match(page, /sealup\/sealup@<commit SHA> # v0\.x\.y/);
+    assert.match(page, /zizmor/);
+    assert.match(page, /Scorecard/);
   });
 
   it("has a row for each input and output of action.yml", () => {

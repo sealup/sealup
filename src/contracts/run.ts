@@ -125,6 +125,11 @@ export type Problem =
       /** The key the server showed. */
       readonly received: ScannedHostKey;
       readonly asked: boolean;
+      /**
+       * The variable `hostKey` reads (`${NAME}`), which keyscan never writes over: the person
+       * updates it in sealup.env and in CI (plan 06 spec #88 decision 8). Never asked then.
+       */
+      readonly variable?: string;
     }
   /**
    * `sealup keyscan` on `ftps://` (exit 4, spec #41 decision 12): the server shows another
@@ -142,6 +147,8 @@ export type Problem =
       /** The certificate the server showed. */
       readonly received: ServerCertificate;
       readonly asked: boolean;
+      /** The variable `tlsFingerprint` reads (`${NAME}`), never written over; as above. */
+      readonly variable?: string;
     }
   /**
    * Safety net R20 (exit 6, S21): a source folder is missing or would send no file, so a

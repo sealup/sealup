@@ -35,7 +35,7 @@ describe('sealup commands on a page, proven to bite', () => {
     const page = md(
       '```sh',
       'sealup init --server sftp://deploy@ssh.example.com/home/site/www',
-      'sealup deploy -n                 # see what would change',
+      'sealup deploy --dry-run          # see what would change',
       'npx sealup@0.1.0 deploy production --mirror --check-server',
       'sealup keyscan staging -c site/sealup.yml',
       'sealup check --json',
@@ -56,6 +56,7 @@ describe('sealup commands on a page, proven to bite', () => {
       'sealup publish',
       'sealup pull --mirror',
       'sealup init production',
+      'sealup deploy -n',
       '```',
     );
     assert.deepEqual(pageProblems('guide.md', page), [
@@ -63,6 +64,7 @@ describe('sealup commands on a page, proven to bite', () => {
       'guide.md:4 `sealup publish`: no command publish (sealup help)',
       'guide.md:5 `sealup pull --mirror`: pull has no flag --mirror (sealup help pull)',
       'guide.md:6 `sealup init production`: init takes no target (sealup help init)',
+      'guide.md:7 `sealup deploy -n`: deploy has no flag -n (sealup help deploy)',
     ]);
   });
 });

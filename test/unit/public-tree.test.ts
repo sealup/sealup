@@ -274,3 +274,62 @@ describe('the proven-to-bite fixtures', () => {
     expect(tree.errors).toEqual(['docs/a.md:1:1 bench-folder', `${fixture}:1:1 bench-folder`]);
   });
 });
+
+// Decision 0042: the public CHANGELOG.md is written at each release; the export stops when its
+// newest section is not the version being released, or when it links to another repo.
+describe('the public changelog', () => {
+  const tree = (changelog: string, pkg = '{"name":"sealup","version":"0.2.0"}\n') =>
+    publicTree({
+      paths: ['CHANGELOG.md', 'package.json'],
+      read: (path) => (path === 'CHANGELOG.md' ? changelog : pkg),
+    });
+  const compare = 'https://github.com/sealup/sealup/compare';
+
+  it.each([
+    ['a linked heading', `# Changelog\n\n## [0.2.0](${compare}/v0.1.1...v0.2.0) (2026-10-20)\n`],
+    ['a plain heading', '# Changelog\n\n## 0.2.0 (2026-10-20)\n\n## 0.1.0 (2026-10-10)\n'],
+  ])("passes when the newest section is package.json's version (%s)", (_name, changelog) => {
+    expect(tree(changelog)).toMatchObject({ ok: true, errors: [] });
+  });
+
+  it("stops when release-please moved the version and the section isn't written yet", () => {
+    expect(
+      tree(`# Changelog\n\n## [0.1.1](${compare}/v0.1.0...v0.1.1) (2026-10-11)\n`).errors,
+    ).toEqual([
+      "CHANGELOG.md: its newest section is 0.1.1, not package.json's 0.2.0; write 0.2.0's section first",
+    ]);
+  });
+
+  it('stops when there is no section at all', () => {
+    expect(tree('# Changelog\n').errors).toEqual([
+      "CHANGELOG.md: its newest section is missing, not package.json's 0.2.0; write 0.2.0's section first",
+    ]);
+  });
+
+  it.each([
+    ['a pull request', '[#4](https://github.com/sealup/sealup/pull/4)'],
+    ['the clone URL', '`https://github.com/sealup/sealup.git`'],
+    ['the repo at the end of a sentence', 'See https://github.com/sealup/sealup.'],
+  ])('passes a link to the public repo (%s)', (_name, link) => {
+    expect(tree(`## 0.2.0 (2026-10-20)\n\n* ${link}\n`)).toMatchObject({ ok: true, errors: [] });
+  });
+
+  it('stops on a link to another repo, naming its place', () => {
+    const changelog = `# Changelog\n\n## 0.2.0 (2026-10-20)\n\n* a fix ([abc](https://github.com/sealup/sealup-private/commit/abc))\n`;
+    expect(tree(changelog).errors).toEqual([
+      'CHANGELOG.md:5:24 links to a repo other than sealup/sealup',
+    ]);
+  });
+
+  it('stops when package.json is not JSON', () => {
+    expect(tree('## 0.2.0\n', 'not json').errors).toEqual([
+      'package.json: not JSON, so CHANGELOG.md cannot be checked against its version',
+    ]);
+  });
+
+  it('is not checked without both files', () => {
+    for (const paths of [['CHANGELOG.md'], ['package.json']]) {
+      expect(publicTree({ paths, read: () => '# Changelog\n' }).errors).toEqual([]);
+    }
+  });
+});

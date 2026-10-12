@@ -8,6 +8,7 @@ import { lineOf, lineWord, printable } from './format.ts';
 import { loginNotSent } from './login-words.ts';
 import type { Explained } from './problems.ts';
 import { serverSentence } from './server-words.ts';
+import { changedFixLines, updateClause, variableFixSummary } from './variable-words.ts';
 
 /** The certificate's lines: what to compare with what the host says. */
 export function certificateFacts(certificate: ServerCertificate): string[] {
@@ -18,6 +19,11 @@ export function certificateFacts(certificate: ServerCertificate): string[] {
     `  valid    ${day(certificate.validFrom)} to ${day(certificate.validTo)}`,
     `  SHA-256  ${certificate.sha256}`,
   ];
+}
+
+/** The variable the pin is read from (decision 0045): the fix sets it, never commits the file. */
+function pinVariable(target: Target): string | undefined {
+  return target.fromVariables?.tlsFingerprint;
 }
 
 /** Short titles, for the annotation and the summary. */
@@ -69,15 +75,7 @@ export function explainTls(
         `  received  SHA-256 ${certificate.sha256}`,
         'Either your host renewed or replaced its certificate, or someone between',
         'you and the server is intercepting the connection.',
-        ...(ci
-          ? [
-              "Ask your host for the certificate's SHA-256. If it is the received one, on",
-              `your machine:  ${command}   then commit ${file}.`,
-            ]
-          : [
-              "Ask your host for the certificate's SHA-256. If it is the received one:",
-              `  ${command}   then commit ${file}.`,
-            ]),
+        ...changedFixLines('tlsFingerprint', pinVariable(target), target.name, file, ci),
       ],
       state,
       slug: 'certificate-refused',
@@ -118,7 +116,11 @@ export function tlsAnnotation(
       place: 'server',
     };
   }
-  const fix = `If your host confirms it, run sealup keyscan ${target.name} on your machine and commit ${file}.`;
+  const variable = pinVariable(target);
+  const fix =
+    variable === undefined
+      ? `If your host confirms it, run sealup keyscan ${target.name} on your machine and commit ${file}.`
+      : `Ask your host, then ${updateClause('tlsFingerprint', variable, target.name, 'deploy')}.`;
   return {
     title: shortTitle(error),
     message: `${serverSentence(error, server.host)}${sha} ${fix} ${tail}`,
@@ -147,11 +149,14 @@ export function tlsSummary(
     };
   }
   const sha = error.certificate === undefined ? '' : ` SHA-256 ${code(error.certificate.sha256)}.`;
+  const variable = pinVariable(target);
   return {
     title: shortTitle(error),
     box: [
       `${serverSentence(error, server.host)}${sha} ${stopped}`,
-      `**Fix:** if your host confirms this certificate, run ${code(`sealup keyscan ${target.name}`)} on your machine and commit ${code(file)}.`,
+      variable === undefined
+        ? `**Fix:** if your host confirms this certificate, run ${code(`sealup keyscan ${target.name}`)} on your machine and commit ${code(file)}.`
+        : variableFixSummary('tlsFingerprint', variable, target.name, code),
     ],
   };
 }

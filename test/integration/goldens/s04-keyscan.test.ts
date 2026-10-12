@@ -122,6 +122,27 @@ describe('S04: save the server key', () => {
     expect(readFileSync(file, 'utf8')).toBe(config);
   });
 
+  // Plan 06 spec #88 decision 8: a public repo's hostKey is a `${NAME}`, never written over.
+  it('a hostKey read from a variable: the line and the variable to set, nothing written', async () => {
+    const hidden = config.replace('www\n', `www\nhostKey: ${ref('SEALUP_HOST_KEY')}\n`);
+    const { root, config: file } = createProject(hidden, { 'dist/index.html': '<h1>home</h1>' });
+    const run = await runMain(['keyscan'], { cwd: root, scan: createMemoryServer().scanHostKey });
+    const s04variable = [
+      'sealup 0.0.0-source · keyscan',
+      ...block,
+      '  Nothing was saved: sealup.yml reads hostKey from a variable, which sealup',
+      "  never writes. Compare the fingerprint with your host's control panel,",
+      '  then set SEALUP_HOST_KEY to this line in sealup.env and in CI:',
+      '',
+      `  ${hostKeyLine}`,
+      '',
+      '  {d}More: sealup.dev/e/key-in-variable{/}',
+    ];
+    expect(run.stderr).toBe(goldenText(s04variable, { color: false }));
+    expect(run.exitCode).toBe(0);
+    expect(readFileSync(file, 'utf8')).toBe(hidden);
+  });
+
   it('gives --json: command keyscan, the hostKey shown and its state', async () => {
     const { root } = project();
     const run = await runMain(['keyscan', '--json'], {

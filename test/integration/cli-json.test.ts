@@ -49,7 +49,7 @@ const keysBeforeLaneC = [
 describe('--json: the order of the keys', () => {
   it.each([
     ['a deploy', ['deploy']],
-    ['a dry run', ['deploy', '-n']],
+    ['a dry run', ['deploy', '--dry-run']],
     ['an error', ['deploy', 'nope']],
   ])('keeps the keys of before in their order, then written (%s)', async (_, argv) => {
     const root = createProject(productionConfig(), site).root;
@@ -96,7 +96,7 @@ describe('--json', () => {
 
   it('reports a stop on the server identity with the target, exit 4', async () => {
     const root = createProject(productionConfig({ hostKey: false }), site).root;
-    const run = await runMain(['deploy', '-n', '--json'], { cwd: root, env });
+    const run = await runMain(['deploy', '--dry-run', '--json'], { cwd: root, env });
 
     expect(run.exitCode).toBe(4);
     expect(json(run.stdout)).toMatchObject({
@@ -144,7 +144,7 @@ describe('--json', () => {
     const root = createProject(productionConfig(), site).root;
     const server = createMemoryServer();
     await runMain(['deploy'], { cwd: root, env, server });
-    const run = await runMain(['deploy', '-n', '--json'], { cwd: root, env, server });
+    const run = await runMain(['deploy', '--dry-run', '--json'], { cwd: root, env, server });
 
     expect(json(run.stdout)).toMatchObject({
       dryRun: true,

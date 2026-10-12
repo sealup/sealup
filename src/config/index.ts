@@ -9,17 +9,24 @@
 // is the did-you-mean for a target name that is not in the file. loadConfig(file, env, options)
 // returns the file's targets by name, each resolved or with its issues, or the issues of the
 // file itself; every issue has a config place (file, line, key path); either way, with every
-// Secret it made, for GitHub's masks (a password written as a literal included, never printed).
+// Secret it made, for GitHub's masks (a password written as a literal included, never printed),
+// and the `hidden` values: a server, host key or certificate fingerprint written as one `${NAME}`
+// reference (decision 0045), masked in GitHub's form only. A target tells which of its parts are
+// such references (`fromVariables`, by variable name), resolved or not.
 // Each target, usable or not, also tells the variables it read that are set and where from (the
 // environment or the env file), its hostKey state, its url and host (`check` and `sealup` alone,
 // spec #24 decisions 12 and 14). configJsonSchema() is the
 // JSON Schema (draft-07) the build ships as `schema.json`. saveHostKey(file, name, keyLine) and
 // its pure core withHostKey(text, name, keyLine) save a host key as an edit of one line of the
 // text (`keyscan`, `init`: spec #24 decision 18); hostKeyPlaceholder is the comment `init`
-// writes in its place, which the edit replaces (save-host-key.ts). For `init` (new-project.ts):
-// newConfigText(facts) is the minimal sealup.yml; envSecret(name, value, kind) makes a value bound
-// for sealup.env a Secret as soon as it is read, and withEnvVariable(text, secret) adds it to an
-// env file in a form the env-file reader gives back (config alone holds its value);
+// writes in its place, which the edit replaces (save-host-key.ts). keyVariable(text, name, key)
+// and readKeyVariable(file, name, key) name the variable a target's hostKey or tlsFingerprint
+// reads (`${NAME}`); no save ever writes over one (plan 06 spec #88 decision 8).
+// For `init` (new-project.ts): newConfigText(facts) is the minimal sealup.yml (`publicRepo`: a
+// public repository's server and host key as references, 0045); envSecret(name, value, kind)
+// makes a value bound for sealup.env a Secret as soon as it is read, and
+// withEnvVariable(text, secret) adds it to an env file in a form the env-file reader gives back
+// (config alone holds its value), or a plain EnvValue (the server);
 // parseServerUrl reads a server address as `server:` is read; findRepoRoot is the repo root
 // findConfig stops at; isFile and isMissing are the file tests findConfig uses, which init reads
 // the project with.
@@ -77,14 +84,19 @@ export type { Env } from './env.ts';
 export { findConfig, findRepoRoot, isFile, isMissing } from './find.ts';
 export {
   type EnvSecret,
+  type EnvValue,
   envSecret,
+  hostKeyVariable,
   type NewConfig,
   newConfigText,
   passwordVariable,
+  serverVariable,
   withEnvVariable,
 } from './new-project.ts';
 export {
   hostKeyPlaceholder,
+  keyVariable,
+  readKeyVariable,
   saveHostKey,
   saveTlsFingerprint,
   withHostKey,
@@ -108,6 +120,13 @@ export interface ResolvedConfig {
  */
 interface LoadedSecrets {
   readonly secrets: readonly Secret[];
+  /**
+   * Every value a target reads from a variable that GitHub's form masks besides the secrets
+   * (decision 0045): a server, its user and host; a host key line and its fingerprint; a
+   * certificate fingerprint. For any target, one that cannot be used included, once each.
+   * Never redacted: a terminal shows them (R22).
+   */
+  readonly hidden: readonly string[];
 }
 
 export type ConfigResult =
@@ -165,6 +184,7 @@ export async function loadConfig(
 
   const issues: ConfigIssue[] = [];
   const secrets: Secret[] = [];
+  const hidden: string[] = [];
   const named = 'targets' in data;
   if (named) {
     for (const key of targetOnlyKeys.filter((k) => Object.hasOwn(data, k))) {
@@ -190,6 +210,7 @@ export async function loadConfig(
     fromFile: vars.fromFile,
     place,
     secrets,
+    hidden,
   };
   const targets = new Map<string, TargetResult>();
   if ('targets' in checked.data) {
@@ -236,7 +257,12 @@ export async function loadConfig(
     };
     targets.set(name, await resolveTarget(name, input, lists, (key) => [key], context));
   }
-  return { ok: true, config: { file, envFile: vars.file, targets }, secrets };
+  return {
+    ok: true,
+    config: { file, envFile: vars.file, targets },
+    secrets,
+    hidden: [...new Set(hidden)],
+  };
 }
 
 /** The shorthand target is named after the server's host (ruling 4), even when the URL is bad. */
@@ -251,5 +277,5 @@ function shorthandName(server: string, env: Env): string {
 }
 
 function fail(issues: readonly ConfigIssue[], secrets: readonly Secret[] = []): ConfigResult {
-  return { ok: false, issues: sorted(issues), secrets };
+  return { ok: false, issues: sorted(issues), secrets, hidden: [] };
 }

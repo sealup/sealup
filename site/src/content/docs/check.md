@@ -54,5 +54,5 @@ sealup check --json              # one JSON object on stdout
 
 ## Learn more
 
-- [`sealup deploy -n`](/deploy/): a dry run also checks the server.
+- [`sealup deploy --dry-run`](/deploy/): a dry run also checks the server.
 - [Exit codes](/exit-codes/): every code sealup gives.

@@ -42,3 +42,5 @@ sealup keyscan production
 `keyscan` shows the certificate's subject, issuer, dates and SHA-256, and offers to save it as `tlsFingerprint` only when the normal check fails. With a pin, the certificate must be that one: the CA and host name checks are no longer made. When the host renews the certificate, the pin must be updated the same way.
 
 If the fingerprint is not your host's, do not deploy: tell your host.
+
+When `sealup.yml` reads the pin from a variable (`tlsFingerprint: ${SEALUP_TLS_FINGERPRINT}`, a public repository), there is nothing to commit: `keyscan` prints the new SHA-256, and you set the variable in `sealup.env` and in CI. See [The key is read from a variable](/e/key-in-variable/). In GitHub's log, the received SHA-256 of such a target shows as `***`.

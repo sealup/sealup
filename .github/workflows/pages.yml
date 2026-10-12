@@ -2,7 +2,7 @@
 # deploys it to GitHub Pages. release.yml calls it once the release is published, so the site
 # matches the released version; it can also be run by hand (on a tag) to redeploy. The build and
 # its checks are CI's `site` job, step for step: every CLI link has a page, no broken link, no
-# sideways scroll at 375 px (the runner's Chrome, through playwright-core).
+# sideways scroll at 375 px, the theme switch (the runner's Chrome, through playwright-core).
 #
 # Hardening (0017, R26): actions pinned to full commit SHAs, the token reads contents only,
 # checkout keeps no credentials, no install script runs, no cache. The deploy job's writes are in
@@ -45,7 +45,7 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Every CLI link has a page, no broken link, no sideways scroll at 375 px
+      - name: Every CLI link has a page, no broken link, no sideways scroll at 375 px, the theme switch
         run: npm run check
 
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0

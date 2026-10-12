@@ -373,3 +373,146 @@ describe('keyscan reads only the server', () => {
     expect(server.logins()).toEqual([{ method: 'password', accepted: true }]);
   });
 });
+
+// Plan 06 spec #88 decision 8 (decision 0045 point 7): a hostKey read from a `${NAME}` is never
+// written over. keyscan asks nothing, prints the key line and names the variable to update in
+// sealup.env and in CI; its exit code is the one of a key not saved (another key: exit 4).
+describe('keyscan: a hostKey read from a variable', () => {
+  const config = twoTargets(ref('SEALUP_HOST_KEY'));
+  const savedKey = { SEALUP_HOST_KEY: hostKeyLine };
+  const changed = (received: string) => [
+    "  {rb}✗{/} {b}The server's host key changed. sealup.yml was not changed.{/}",
+    '    sealup.yml (line 6) expects one key; ssh.example.com sent another:',
+    `      expected  ED25519 ${hostKeyFingerprint}`,
+    `      received  ED25519 ${received}`,
+    '    Either your host moved the site to a new server, or someone between you',
+    '    and the server is intercepting the connection.',
+    '    sealup.yml reads hostKey from a variable, which sealup never writes.',
+    "    Ask your host for the server's fingerprint. If it is the received one,",
+    '    set SEALUP_HOST_KEY to this line in sealup.env and in CI:',
+    `      ${otherLine}`,
+    '',
+    '    Nothing was changed.',
+    '    {d}More: sealup.dev/e/key-in-variable{/}',
+  ];
+
+  it.each([
+    ['without a terminal', false],
+    ['on a terminal, asking nothing', true],
+  ])(
+    'another key, %s: the line and the variable, exit 4, sealup.yml byte for byte',
+    async (_, tty) => {
+      const { root, config: file } = createProject(config, build);
+      const server = scanOf(otherLine);
+      const run = await runMain(['keyscan', 'production'], {
+        cwd: root,
+        tty,
+        env: savedKey,
+        scan: server.scanHostKey,
+      });
+      expect(screenOf(run.stderr)).toBe(
+        goldenText(
+          [
+            ...(tty ? [] : ['sealup 0.0.0-source · keyscan production']),
+            production,
+            `  host key    ${server.fingerprint}  {rb}changed{/}`,
+            '',
+            ...changed(server.fingerprint),
+          ],
+          { color: tty },
+        ),
+      );
+      expect(run.exitCode).toBe(4);
+      expect(readFileSync(file, 'utf8')).toBe(config);
+    },
+  );
+
+  it('in GitHub: the annotation names the variable; --json says changed', async () => {
+    const { root, config: file } = createProject(config, build);
+    const server = scanOf(otherLine);
+    const run = await runMain(['keyscan', 'production', '--json'], {
+      cwd: root,
+      env: { ...inGitHub, ...savedKey },
+      scan: server.scanHostKey,
+    });
+    expect(run.stderr.split('\n')).toContain(
+      `::error file=sealup.yml,line=6,title=Host key changed::ssh.example.com sent ${server.fingerprint}; sealup.yml expects ${hostKeyFingerprint}. The host moved the site, or someone is intercepting. Ask your host, then set SEALUP_HOST_KEY to the new key in sealup.env and in CI.`,
+    );
+    expect(JSON.parse(run.stdout)).toMatchObject({
+      status: 'failed',
+      exitCode: 4,
+      hostKey: { line: otherLine, state: 'changed' },
+      error: { code: 'key-in-variable' },
+    });
+    expect(run.exitCode).toBe(4);
+    expect(readFileSync(file, 'utf8')).toBe(config);
+  });
+
+  it('the variable not set: scans, prints the line and the variable to set, exit 0', async () => {
+    const { root, config: file } = createProject(config, build);
+    const run = await runMain(['keyscan', 'production', '--json'], {
+      cwd: root,
+      tty: true,
+      scan: scanOf().scanHostKey,
+    });
+    expect(screenOf(run.stderr)).toBe(
+      goldenText(
+        [
+          production,
+          `  host key    ${hostKeyFingerprint}  {y}not saved{/}`,
+          '',
+          '  Nothing was saved: sealup.yml reads hostKey from a variable, which sealup',
+          "  never writes. Compare the fingerprint with your host's control panel,",
+          '  then set SEALUP_HOST_KEY to this line in sealup.env and in CI:',
+          '',
+          `  ${hostKeyLine}`,
+          '',
+          '  {d}More: sealup.dev/e/key-in-variable{/}',
+        ],
+        { color: true },
+      ),
+    );
+    expect(run.exitCode).toBe(0);
+    expect(readFileSync(file, 'utf8')).toBe(config);
+    expect(JSON.parse(run.stdout)).toMatchObject({ status: 'ok', hostKey: { state: 'not-saved' } });
+  });
+
+  it('the same key: already saved, naming the variable that holds it', async () => {
+    const { root, config: file } = createProject(config, build);
+    const run = await runMain(['keyscan', 'production'], {
+      cwd: root,
+      tty: true,
+      env: savedKey,
+      scan: scanOf().scanHostKey,
+    });
+    expect(screenOf(run.stderr)).toBe(
+      goldenText(
+        [
+          production,
+          `  host key    ${hostKeyFingerprint}  {g}saved{/}`,
+          '',
+          '  {gb}✓ Already saved:{/} SEALUP_HOST_KEY holds this key (hostKey, line 6).',
+        ],
+        { color: true },
+      ),
+    );
+    expect(run.exitCode).toBe(0);
+    expect(readFileSync(file, 'utf8')).toBe(config);
+  });
+
+  it('a literal hostKey in another target of the same file is still replaced on a yes', async () => {
+    const both = config.replace('/srv/site\n', `/srv/site\n    hostKey: ${hostKeyLine}\n`);
+    const { root, config: file } = createProject(both, build);
+    const run = await runMain(['keyscan', 'staging'], {
+      cwd: root,
+      tty: true,
+      keys: ['y', enter],
+      env: savedKey,
+      scan: scanOf(otherLine).scanHostKey,
+    });
+    expect(run.exitCode, run.stderr).toBe(0);
+    expect(readFileSync(file, 'utf8')).toBe(
+      both.replace(`hostKey: ${hostKeyLine}`, `hostKey: ${otherLine}`),
+    );
+  });
+});

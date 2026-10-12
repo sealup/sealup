@@ -194,3 +194,26 @@ describe('a file written from a secret (R17): its content, line breaks allowed',
     expect(sameAsSecret(secret, Buffer.from('KEY=fake-e-value\n'))).toBe(false);
   });
 });
+
+describe('a value hidden in GitHub’s form only (decision 0045)', () => {
+  it('gets the forms of a secret, after the secrets, once each', () => {
+    const forms = secretForms([secretOf('fake-pw-for-forms')], ['hidden-host.example.com']);
+    expect(forms.indexOf('fake-pw-for-forms')).toBe(0);
+    expect(forms).toContain('hidden-host.example.com');
+    expect(forms).toContain(Buffer.from('hidden-host.example.com').toString('base64'));
+    expect(forms).toContain(Buffer.from('hidden-host.example.com').toString('hex'));
+    expect(forms.indexOf('hidden-host.example.com')).toBeGreaterThan(0);
+    expect(new Set(forms).size).toBe(forms.length);
+  });
+
+  it('is masked as it is only when under 6 characters: its encodings would hide too much', () => {
+    expect(secretForms([], ['web'])).toEqual(['web']);
+  });
+
+  it('is never redacted: a terminal shows it (R22)', () => {
+    secretForms([], ['shown-on-a-terminal.example.com']);
+    expect(redact('sftp://shown-on-a-terminal.example.com')).toBe(
+      'sftp://shown-on-a-terminal.example.com',
+    );
+  });
+});

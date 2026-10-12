@@ -26,7 +26,8 @@ import { samSyncProject } from '../../sam-sync-kit.ts';
 const password = canaries.SEALUP_CANARY_PASSWORD;
 const appEnv = canaries.SEALUP_CANARY_MULTILINE;
 
-const s03 = [
+/** The screen up to the public question's answer (0045): `y` or `n`. */
+const s03Questions = (publicAnswer: 'y' | 'n') => [
   '  Found a sam-sync setup: .deployment.json and .download.json.',
   '  Convert it to sealup.yml? [Y/n] y',
   '',
@@ -38,7 +39,7 @@ const s03 = [
   '    1 pull folder   www/resources → public_html/resources',
   '    2 secrets       SEALUP_PASSWORD (the password), APP_ENV (api/.env.prod)',
   '                    {d}both moved to sealup.env, never written in sealup.yml{/}',
-  '  {d}Not needed any more: verbose and dry (use -v and -n).{/}',
+  '  {d}Not needed any more: verbose and dry (use -v and --dry-run).{/}',
   '  {d}.download.json used the same server, so it became the pull: section.{/}',
   '',
   "  sam-sync never checked the server's identity. sealup does, before each login:",
@@ -51,8 +52,27 @@ const s03 = [
   '  If they match, this is your server.',
   '  Save it to sealup.yml as hostKey? [y/N] y',
   '',
+  '  {d}Anyone can read sealup.yml in a public repository. sealup can keep the server{/}',
+  '  {d}and its host key out of it: in sealup.env here, and in secrets on GitHub.{/}',
+  `  Is this repository public? [y/N] ${publicAnswer}`,
+  '',
   '  {gb}✓ This project is set up.{/} Files written:',
   '    {g}+{/} sealup.yml                     from your 2 sam-sync files',
+];
+
+/** The end: the old files to delete and the next commands. */
+const s03End = [
+  '  {y}!{/} {b}The old sam-sync files hold your password, and git history keeps it.{/}',
+  '    Delete them:  git rm .deployment.json .download.json  then commit.',
+  '    Then change the password on the host, in sealup.env and in SEALUP_PASSWORD.',
+  '',
+  '  {b}Next:{/}',
+  '    sealup deploy --dry-run    dry run: list every change, change nothing',
+  '    sealup deploy              deploy to ssh.example.com',
+];
+
+const s03 = [
+  ...s03Questions('n'),
   '    {g}+{/} sealup.env                     SEALUP_PASSWORD, APP_ENV (git-ignored)',
   '    ~ .gitignore                     added the line sealup.env',
   '    {g}+{/} .github/workflows/deploy.yml   on push to main: build, then deploy',
@@ -62,13 +82,23 @@ const s03 = [
   '  On GitHub, add the secrets {b}SEALUP_PASSWORD{/} and {b}APP_ENV{/}:',
   '  {d}Settings › Secrets and variables › Actions › New repository secret{/}',
   '',
-  '  {y}!{/} {b}The old sam-sync files hold your password, and git history keeps it.{/}',
-  '    Delete them:  git rm .deployment.json .download.json  then commit.',
-  '    Then change the password on the host, in sealup.env and in SEALUP_PASSWORD.',
+  ...s03End,
+];
+
+/** A public repository (0045): the same question as S02, with the same result. */
+const s03Public = [
+  ...s03Questions('y'),
+  '    {g}+{/} sealup.env                     SEALUP_PASSWORD, APP_ENV, SEALUP_SERVER, SEALUP_HOST_KEY (git-ignored)',
+  '    ~ .gitignore                     added the line sealup.env',
+  '    {g}+{/} .github/workflows/deploy.yml   on push to main: build, then deploy',
+  '  {d}package.json still calls sam-sync in deploy and download: change them to{/}',
+  '  {d}sealup deploy and sealup pull.{/}',
   '',
-  '  {b}Next:{/}',
-  '    sealup deploy -n    dry run: list every change, change nothing',
-  '    sealup deploy       deploy to ssh.example.com',
+  '  On GitHub, add the secrets {b}SEALUP_PASSWORD{/}, {b}APP_ENV{/}, {b}SEALUP_SERVER{/} and {b}SEALUP_HOST_KEY{/}:',
+  '  {d}Settings › Secrets and variables › Actions › New repository secret{/}',
+  '  {d}Copy each value from sealup.env.{/}',
+  '',
+  ...s03End,
 ];
 
 describe('S03: convert a sam-sync project', () => {
@@ -78,7 +108,7 @@ describe('S03: convert a sam-sync project', () => {
     const run = await runMain(['init'], {
       cwd: root,
       tty: true,
-      keys: ['y', '\r', 'y', '\r'],
+      keys: ['y', '\r', 'y', '\r', '\r'],
       scan: scan.scanHostKey,
     });
     expect(screenOf(run.stderr)).toBe(goldenText(s03, { color: true }));
@@ -124,5 +154,36 @@ describe('S03: convert a sam-sync project', () => {
       if (path === '.gitignore') continue;
       expect(readFileSync(join(root, ...path.split('/')), 'utf8')).toBe(content);
     }
+  });
+
+  // Decision 0045: the conversion asks whether the repository is public, as S02 does.
+  it('keeps the server and the host key out of sealup.yml in a public repository', async () => {
+    const root = newProject(samSyncProject());
+    const run = await runMain(['init'], {
+      cwd: root,
+      tty: true,
+      keys: ['y', '\r', 'y', '\r', 'y', '\r'],
+      scan: createMemoryServer().scanHostKey,
+    });
+    expect(screenOf(run.stderr)).toBe(goldenText(s03Public, { color: true }));
+    expect(run.exitCode).toBe(0);
+    expect(readFileSync(join(root, 'sealup.yml'), 'utf8').split('\n').slice(0, 4)).toEqual([
+      `server: ${ref('SEALUP_SERVER')}`,
+      `password: ${ref('SEALUP_PASSWORD')}`,
+      `hostKey: ${ref('SEALUP_HOST_KEY')}`,
+      'upload:',
+    ]);
+    expect(parseEnv(readFileSync(join(root, 'sealup.env'), 'utf8'))).toEqual({
+      SEALUP_PASSWORD: password,
+      APP_ENV: appEnv,
+      SEALUP_SERVER: 'sftp://deploy@ssh.example.com/home/site',
+      SEALUP_HOST_KEY: hostKeyLine,
+    });
+    const workflow = readFileSync(join(root, '.github', 'workflows', 'deploy.yml'), 'utf8');
+    expect(workflow).toContain(
+      ['SEALUP_PASSWORD', 'APP_ENV', 'SEALUP_SERVER', 'SEALUP_HOST_KEY']
+        .map((name) => `          ${name}: $\{{ secrets.${name} }}\n`)
+        .join(''),
+    );
   });
 });

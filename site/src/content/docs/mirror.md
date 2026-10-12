@@ -23,7 +23,7 @@ exclude:
 For every upload entry, one run only, to clean a target once without editing the config:
 
 ```sh
-sealup deploy -n --mirror   # see every delete first
+sealup deploy --dry-run --mirror   # see every delete first
 sealup deploy --mirror
 ```
 

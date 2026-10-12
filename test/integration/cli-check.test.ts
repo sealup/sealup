@@ -35,7 +35,7 @@ describe('sealup check [target]', () => {
     expect(run.stderr).toContain('✓ Variables set: PROD_PASSWORD  (from the environment)\n');
     expect(run.stderr).not.toContain('STAGING');
     expect(run.stderr).toContain(
-      'Checked offline. A dry run also checks the server: sealup deploy -n production\n',
+      'Checked offline. A dry run also checks the server: sealup deploy --dry-run production\n',
     );
   });
 
@@ -93,7 +93,7 @@ describe('sealup check [target]', () => {
     expect(run.stderr).toContain(
       '  ✓ Ready to deploy to staging. production needs a host key first.\n',
     );
-    expect(run.stderr).toContain('sealup deploy -n staging\n');
+    expect(run.stderr).toContain('sealup deploy --dry-run staging\n');
   });
 
   it('gives the first target’s code when no target is ready', async () => {

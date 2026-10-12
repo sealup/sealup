@@ -192,7 +192,7 @@ describe('the action: inputs to a deploy', () => {
     expect(server.files().has('/home/site/index.html')).toBe(true);
   });
 
-  it('runs main() as `deploy [target] [-n] [-c <config>]`: its log, masks first, and its job summary', async () => {
+  it('runs main() as `deploy [target] [--dry-run] [-c <config>]`: its log, masks first, and its job summary', async () => {
     const { root, server } = workspace();
     const step = await runStep(
       { target: 'production', 'dry-run': 'true', config: 'sealup.yml' },

@@ -3,8 +3,11 @@
 // offers, so the home can't drift from the CLI any more than a guide can.
 
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import { sampleProblems } from '../scripts/guide-checks.ts';
+import { actionStep } from '../scripts/release-page.ts';
 import { cells, columns, inline, plain, segments } from '../src/home/lines.ts';
 import { config, home } from '../src/home/samples.ts';
 
@@ -83,6 +86,48 @@ describe('a job summary line, as the page draws it', () => {
       { text: ' verified', code: false },
     ]);
     assert.deepEqual(inline('https://example.com'), [{ text: 'https://example.com', code: false }]);
+  });
+});
+
+describe("the home page's copy", () => {
+  const page = readFileSync(join(import.meta.dirname, '..', 'src', 'pages', 'index.astro'), 'utf8');
+  const text = (html: string): string => html.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+  const hero = /<section class="hero"[\s\S]*?<p class="lede">([\s\S]*?)<\/p>/.exec(page)?.[1] ?? '';
+  const description = /name="description"\s+content="([^"]*)"/.exec(page)?.[1] ?? '';
+
+  it('opens the hero on what it does, not on the name, which stays lowercase', () => {
+    const lede = text(hero);
+    assert.match(lede, /^Deploy a built site to any hosting you can reach over SFTP, SSH or FTP\b/);
+    assert.doesNotMatch(page, /Sealup|SEALUP/);
+  });
+
+  it('gives the meta description the same opening as the hero', () => {
+    assert.match(description, /^Deploy a built site to any hosting you can reach over SFTP, SSH or FTP\b/);
+  });
+
+  // Spec sealup/sealup-private#88 decision 22, story 19: one sentence for public repos.
+  it('says in "What stays out of git" that a public repo keeps the server and host key out too', () => {
+    const note = text(/<h3>What stays out of git<\/h3>\s*<p>([\s\S]*?)<\/p>/.exec(page)?.[1] ?? '');
+    const sentences = note.split(/(?<=\.) /).filter((sentence) => /public repo/.test(sentence));
+    assert.equal(sentences.length, 1, note);
+    assert.match(sentences[0] ?? '', /server/);
+    assert.match(sentences[0] ?? '', /host key/);
+  });
+
+  it('says how the speed was measured without naming a host or a date', () => {
+    const method = text(/<p class="method">([\s\S]*?)<\/p>/.exec(page)?.[1] ?? '');
+    assert.equal(method, 'Measured on a low-cost shared hosting plan, with a PHP API and an Angular build.');
+  });
+});
+
+// Spec #88 decision 12, 0043: the step from the release facts, by its tag, without `id:`.
+describe("the home page's Action step", () => {
+  const page = readFileSync(join(import.meta.dirname, '..', 'src', 'pages', 'index.astro'), 'utf8');
+
+  it("is the release facts' step without an id, and no step typed in", () => {
+    assert.match(page, /^const step = release\.step\.split\('\\n'\)/m);
+    assert.doesNotMatch(page, /stepWithId|sealup\/sealup@/);
+    assert.doesNotMatch(actionStep({ version: '0.1.0' }), /id:/);
   });
 });
 

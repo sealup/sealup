@@ -19,8 +19,8 @@ const ctrlC = '\u0003';
 const password = canaries.SEALUP_CANARY_PASSWORD;
 const server = 'sftp://deploy@ssh.example.com/home/site';
 const build = { 'dist/index.html': '<h1>home</h1>' };
-/** Every answer of a run that goes well: the server, yes to the key, the password. */
-const answers = [server, enter, 'y', enter, password, enter];
+/** Every answer of a run that goes well: the server, yes to the key, not public, the password. */
+const answers = [server, enter, 'y', enter, enter, password, enter];
 
 const exists = (path: string): boolean => {
   try {
@@ -70,7 +70,7 @@ describe('init never overwrites', () => {
 
   it('asks no password when sealup.env already sets it, and leaves the file as it is', async () => {
     const root = newProject({ ...build, 'sealup.env': 'SEALUP_PASSWORD=already-set\n' });
-    const run = await terminal(root, [server, enter, 'y', enter]);
+    const run = await terminal(root, [server, enter, 'y', enter, enter]);
     expect(run.exitCode).toBe(0);
     const screen = screenOf(run.stderr);
     expect(screen).toContain('  sealup.env already holds SEALUP_PASSWORD: it stays as it is.\n');
@@ -165,7 +165,17 @@ describe('the questions', () => {
 
   it('refuses a password too short to hide, and asks again', async () => {
     const root = newProject(build);
-    const run = await terminal(root, [server, enter, 'y', enter, 'abc', enter, password, enter]);
+    const run = await terminal(root, [
+      server,
+      enter,
+      'y',
+      enter,
+      enter,
+      'abc',
+      enter,
+      password,
+      enter,
+    ]);
     expect(run.exitCode).toBe(0);
     expect(screenOf(run.stderr)).toContain(
       '  ✗ sealup cannot use this password: it has fewer than 6 characters, too short to hide in logs.\n',
@@ -177,12 +187,12 @@ describe('the questions', () => {
 
   it('writes the placeholder on a no to the key; keyscan then saves it there', async () => {
     const root = newProject(build);
-    const run = await terminal(root, [server, enter, enter, password, enter]);
+    const run = await terminal(root, [server, enter, enter, enter, password, enter]);
     expect(run.exitCode).toBe(0);
     const screen = screenOf(run.stderr);
     expect(screen).toContain('  ✓ Files written:\n');
     expect(screen).toMatch(/\+ sealup\.yml +server, password, upload: dist; no hostKey yet\n/);
-    expect(screen).toContain("    sealup keyscan      check the server's key and save it\n");
+    expect(screen).toContain("    sealup keyscan             check the server's key and save it\n");
     const file = join(root, 'sealup.yml');
     expect(readFileSync(file, 'utf8').split('\n')[2]).toBe(hostKeyPlaceholder);
 
@@ -194,7 +204,8 @@ describe('the questions', () => {
   it.each([
     ['Esc at the server', ['sftp', esc]],
     ['Ctrl-C at the key', [server, enter, ctrlC]],
-    ['Esc at the password', [server, enter, 'y', enter, 'pass', esc]],
+    ['Esc at the public question', [server, enter, 'y', enter, esc]],
+    ['Esc at the password', [server, enter, 'y', enter, enter, 'pass', esc]],
   ])('stops on %s: exit 130, nothing written', async (_, keys) => {
     const root = newProject(build);
     const run = await terminal(root, keys);
@@ -253,9 +264,9 @@ describe('without a terminal', () => {
         '  Settings › Secrets and variables › Actions › New repository secret',
         '',
         '  Next, on your computer:',
-        "    sealup keyscan      check the server's key and save it",
-        '    sealup deploy -n    dry run: list every change, change nothing',
-        '    sealup deploy       deploy to ssh.example.com',
+        "    sealup keyscan             check the server's key and save it",
+        '    sealup deploy --dry-run    dry run: list every change, change nothing',
+        '    sealup deploy              deploy to ssh.example.com',
         '',
       ].join('\n'),
     );
@@ -303,6 +314,211 @@ describe('without a terminal', () => {
   });
 });
 
+// Decision 0045: on a yes, the server and its host key stay out of sealup.yml.
+describe('a public repository', () => {
+  const publicAnswers = [server, enter, 'y', enter, 'y', enter, password, enter];
+  const secretLine = (name: string) => `          ${name}: $\{{ secrets.${name} }}`;
+
+  it('asks after the host key and before the password, default no', async () => {
+    const root = newProject(build);
+    const run = await terminal(root, answers);
+    expect(run.exitCode).toBe(0);
+    const screen = screenOf(run.stderr);
+    expect(screen).toContain(
+      [
+        '  Save it to sealup.yml as hostKey? [y/N] y',
+        '',
+        '  Anyone can read sealup.yml in a public repository. sealup can keep the server',
+        '  and its host key out of it: in sealup.env here, and in secrets on GitHub.',
+        '  Is this repository public? [y/N] n',
+        '',
+        '  The password goes in sealup.env',
+      ].join('\n'),
+    );
+    expect(readFileSync(join(root, 'sealup.yml'), 'utf8')).toContain(`server: ${server}\n`);
+  });
+
+  it('writes references in sealup.yml, the values in sealup.env, the secrets in the workflow', async () => {
+    const root = newProject(build);
+    const run = await terminal(root, publicAnswers);
+    expect(run.exitCode, run.stderr).toBe(0);
+    expect(readFileSync(join(root, 'sealup.yml'), 'utf8')).toBe(
+      [
+        `server: ${ref('SEALUP_SERVER')}`,
+        `password: ${ref('SEALUP_PASSWORD')}`,
+        `hostKey: ${ref('SEALUP_HOST_KEY')}`,
+        'upload: dist',
+        '',
+      ].join('\n'),
+    );
+    expect(parseEnv(readFileSync(join(root, 'sealup.env'), 'utf8'))).toEqual({
+      SEALUP_PASSWORD: password,
+      SEALUP_SERVER: server,
+      SEALUP_HOST_KEY: hostKeyLine,
+    });
+    if (process.platform !== 'win32') {
+      expect(statSync(join(root, 'sealup.env')).mode & 0o777).toBe(0o600);
+    }
+    const workflow = readFileSync(join(root, '.github', 'workflows', 'deploy.yml'), 'utf8');
+    expect(workflow).toContain(
+      [
+        '        env:',
+        secretLine('SEALUP_PASSWORD'),
+        secretLine('SEALUP_SERVER'),
+        secretLine('SEALUP_HOST_KEY'),
+        '',
+      ].join('\n'),
+    );
+    const screen = screenOf(run.stderr);
+    expect(screen).toMatch(
+      /\+ sealup\.env +SEALUP_PASSWORD, SEALUP_SERVER, SEALUP_HOST_KEY \(git-ignored\)\n/,
+    );
+    expect(screen).toContain(
+      [
+        '  On GitHub, add the secrets SEALUP_PASSWORD, SEALUP_SERVER and SEALUP_HOST_KEY:',
+        '  Settings › Secrets and variables › Actions › New repository secret',
+        '  Copy each value from sealup.env.',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  it('keeps a variable sealup.env already sets, and appends the others', async () => {
+    const before = 'SEALUP_PASSWORD=already-set\nSEALUP_SERVER=sftp://deploy@other.example.com/x\n';
+    const root = newProject({ ...build, 'sealup.env': before });
+    const run = await terminal(root, [server, enter, 'y', enter, 'y', enter]);
+    expect(run.exitCode, run.stderr).toBe(0);
+    const text = readFileSync(join(root, 'sealup.env'), 'utf8');
+    expect(text).toBe(`${before}SEALUP_HOST_KEY='${hostKeyLine}'\n`);
+    expect(screenOf(run.stderr)).toMatch(/~ sealup\.env +added SEALUP_HOST_KEY\n/);
+    expect(screenOf(run.stderr)).toContain(
+      '  On GitHub, add the secrets SEALUP_PASSWORD, SEALUP_SERVER and SEALUP_HOST_KEY:\n',
+    );
+  });
+
+  it('gives no host-key variable without a saved key: the placeholder stays', async () => {
+    const root = newProject(build);
+    const run = await terminal(root, [server, enter, enter, 'y', enter, password, enter]);
+    expect(run.exitCode, run.stderr).toBe(0);
+    const screen = screenOf(run.stderr);
+    expect(screen).toContain(
+      '  Anyone can read sealup.yml in a public repository. sealup can keep the server\n  out of it: in sealup.env here, and in secrets on GitHub.\n',
+    );
+    expect(readFileSync(join(root, 'sealup.yml'), 'utf8').split('\n').slice(0, 3)).toEqual([
+      `server: ${ref('SEALUP_SERVER')}`,
+      `password: ${ref('SEALUP_PASSWORD')}`,
+      hostKeyPlaceholder,
+    ]);
+    expect(parseEnv(readFileSync(join(root, 'sealup.env'), 'utf8'))).toEqual({
+      SEALUP_PASSWORD: password,
+      SEALUP_SERVER: server,
+    });
+    expect(screen).toContain('  On GitHub, add the secrets SEALUP_PASSWORD and SEALUP_SERVER:\n');
+    const workflow = readFileSync(join(root, '.github', 'workflows', 'deploy.yml'), 'utf8');
+    expect(workflow).not.toContain('SEALUP_HOST_KEY');
+  });
+
+  it.each([['ftp://deploy@ftp.example.com/www'], ['ftps://deploy@ftp.example.com/www']])(
+    'gives %s only the server variable, asked with --server on a terminal',
+    async (address) => {
+      const root = newProject(build);
+      const run = await terminal(
+        root,
+        ['y', enter, password, enter],
+        ['init', '--server', address],
+      );
+      expect(run.exitCode, run.stderr).toBe(0);
+      expect(readFileSync(join(root, 'sealup.yml'), 'utf8')).toBe(
+        [
+          `server: ${ref('SEALUP_SERVER')}`,
+          `password: ${ref('SEALUP_PASSWORD')}`,
+          'upload: dist',
+          '',
+        ].join('\n'),
+      );
+      expect(parseEnv(readFileSync(join(root, 'sealup.env'), 'utf8'))).toEqual({
+        SEALUP_PASSWORD: password,
+        SEALUP_SERVER: address,
+      });
+    },
+  );
+
+  // Decision 0045 point 3: without the question, today's files, byte for byte.
+  it('is not asked without a terminal: --server writes today’s files, byte for byte', async () => {
+    const root = newProject(build);
+    const run = await runMain(['init', '--server', server], { cwd: root });
+    expect(run.exitCode).toBe(0);
+    expect(run.stderr).not.toContain('public');
+    expect(readFileSync(join(root, 'sealup.yml'), 'utf8')).toBe(
+      [
+        `server: ${server}`,
+        `password: ${ref('SEALUP_PASSWORD')}`,
+        hostKeyPlaceholder,
+        'upload: dist',
+        '',
+      ].join('\n'),
+    );
+    expect(readFileSync(join(root, '.gitignore'), 'utf8')).toBe('sealup.env\n');
+    expect(exists(join(root, 'sealup.env'))).toBe(false);
+    expect(readFileSync(join(root, '.github', 'workflows', 'deploy.yml'), 'utf8')).toBe(
+      [
+        '# Deploys with sealup on every push to main (written by sealup init).',
+        `# Secrets go through env:, never as inputs: sealup.yml reads them as ${ref('NAME')}.`,
+        'name: Deploy',
+        '',
+        'on:',
+        '  push:',
+        '    branches: [main]',
+        '',
+        'permissions:',
+        '  contents: read',
+        '',
+        '# One deploy at a time: a newer push waits, and a running deploy is never cancelled.',
+        'concurrency:',
+        '  group: sealup-production',
+        '  cancel-in-progress: false',
+        '',
+        'jobs:',
+        '  deploy:',
+        '    runs-on: ubuntu-latest',
+        '    environment:',
+        '      name: production',
+        `      url: $\{{ steps.sealup.outputs.url }}`,
+        '    steps:',
+        '      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1',
+        '        with:',
+        '          persist-credentials: false',
+        '',
+        '      - uses: sealup/sealup@v0.0.0-source',
+        '        id: sealup',
+        '        env:',
+        `          SEALUP_PASSWORD: $\{{ secrets.SEALUP_PASSWORD }}`,
+        '',
+      ].join('\n'),
+    );
+  });
+
+  it('over SFTP: a dry run right after reads the server and the key from sealup.env', async () => {
+    const sftp = await testServer({ password });
+    const root = newProject(build);
+    writeFileSync(join(root, '.gitignore'), '');
+    const run = await runMain(['init'], {
+      cwd: root,
+      tty: true,
+      keys: publicAnswers,
+      scan: scanDialing(sftp),
+    });
+    expect(run.exitCode, run.stderr).toBe(0);
+    expect(readFileSync(join(root, 'sealup.yml'), 'utf8')).toContain(
+      `hostKey: ${ref('SEALUP_HOST_KEY')}\n`,
+    );
+    const planned = await runMain(['deploy', '--dry-run'], { cwd: root, connect: dialing(sftp) });
+    expect(planned.exitCode, planned.stderr).toBe(0);
+    expect(planned.stderr).toContain('ssh.example.com');
+    expect(sftp.logins()).toEqual([{ method: 'password', accepted: true }]);
+  });
+});
+
 describe('the typed password (leak test, R1)', () => {
   it('reaches sealup.env only: never the screen, --json, sealup.yml or the workflow', async () => {
     const root = newProject(build);
@@ -347,7 +563,6 @@ describe('init and the command line', () => {
     [['-c', 'other.yml'], '-c'],
     [['--config', 'other.yml'], '--config'],
     [['--env-file', 'prod.env'], '--env-file'],
-    [['-n'], '-n'],
     [['--dry-run'], '--dry-run'],
     [['-v'], '-v'],
     [['-q'], '-q'],

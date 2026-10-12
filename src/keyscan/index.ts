@@ -7,15 +7,19 @@
 //
 // Interface: keyscanTarget(config, name) gives the target to scan (KeyscanTarget), or the
 // problem that stops before scanning (a name not in the file, several targets and none named,
-// a server or hostKey the config cannot read). scanKey(target, scan, signal) scans it through
-// the host-key scan port and gives a KeyscanReport (facts; report words them), or the transport
-// problem. notReplaced(report, asked) is the problem of another key left in place (exit 4). cli
+// a server or hostKey the config cannot read; a key whose `${NAME}` is not set is scanned as not
+// saved). scanKey(target, scan, signal) scans it through the host-key scan port and gives a
+// KeyscanReport (facts; report words them), or the transport problem. notReplaced(report, asked,
+// variable?) is the problem of another key left in place (exit 4), naming the variable the key
+// is read from, which no save writes over (plan 06 spec #88 decision 8). cli
 // asks the question and saves the key through config (saveHostKey). An `ftp://` target has no
 // key: cli scans nothing and says so, exit 0 (spec #41 decision 12). An `ftps://` target shows its
 // certificate instead: scanPin(target, scan, signal) scans it through the certificate scan port
 // and gives a CertificateReport (trusted, a pin offered, pinned, or another pin), and
-// pinNotReplaced(report, asked) is the problem of another pin left in place (exit 4); cli saves
-// a pin through config (saveTlsFingerprint).
+// pinNotReplaced(report, asked, variable?) is the problem of another pin left in place (exit 4); cli saves
+// a pin through config (saveTlsFingerprint). A KeyscanTarget tells which of its parts are read
+// from a variable (decision 0045): in GitHub's form cli scans such a target before its log
+// starts, so the key the server shows is masked with the rest.
 //
 // Invariants: no credential is read for the scan or given to it; nothing here writes.
 //
@@ -25,6 +29,7 @@ import { closestTargetName, type ResolvedConfig } from '../config/index.ts';
 import {
   type CertificateReport,
   type ConfigPlace,
+  type FromVariables,
   type HostKey,
   type KeyscanReport,
   type Problem,
@@ -45,6 +50,8 @@ export interface KeyscanTarget {
   /** `ftps://`: the pinned certificate's SHA-256 and its place, when there is one. */
   readonly tlsFingerprint?: { readonly sha256: string; readonly place: ConfigPlace };
   readonly timeoutMs: number;
+  /** Its parts read from a variable (decision 0045), whether or not the variable is set. */
+  readonly fromVariables?: FromVariables;
 }
 
 /**
@@ -78,8 +85,15 @@ export function keyscanTarget(
   }
   const { connection } = entry;
   const issues = entry.ok ? [] : entry.issues;
-  const blocking = issues.filter((issue) =>
-    /(?:^|\.)(?:server|hostKey|tlsFingerprint)$/.test(issue.keyPath),
+  // A key read from a variable that is not set is no saved key: the scan shows the one to set
+  // (plan 06 spec #88 decision 8).
+  const blocking = issues.filter(
+    (issue) =>
+      /(?:^|\.)(?:server|hostKey|tlsFingerprint)$/.test(issue.keyPath) &&
+      !(
+        issue.code === 'variable-not-set' &&
+        /(?:^|\.)(?:hostKey|tlsFingerprint)$/.test(issue.keyPath)
+      ),
   );
   if (connection === undefined || blocking.length > 0) {
     const shown = blocking.length > 0 ? blocking : issues;
@@ -96,6 +110,7 @@ export function keyscanTarget(
         ? {}
         : { tlsFingerprint: connection.tlsFingerprint }),
       timeoutMs: connection.timeoutMs,
+      ...(entry.fromVariables === undefined ? {} : { fromVariables: entry.fromVariables }),
     },
   };
 }
@@ -104,7 +119,7 @@ export function keyscanTarget(
  * The problem of a key not replaced (exit 4): the server shows another key than the saved one,
  * and the answer was no (`asked`) or there was no terminal to ask.
  */
-export function notReplaced(report: KeyscanReport, asked: boolean): Problem {
+export function notReplaced(report: KeyscanReport, asked: boolean, variable?: string): Problem {
   const { saved } = report;
   if (report.state !== 'other' || saved === undefined) {
     throw new RangeError('only another key than the saved one is not replaced');
@@ -118,6 +133,7 @@ export function notReplaced(report: KeyscanReport, asked: boolean): Problem {
     place: saved.place,
     received: report.shown,
     asked,
+    ...(variable === undefined ? {} : { variable }),
   };
 }
 
@@ -195,7 +211,11 @@ export async function scanPin(
  * The problem of a pin not replaced (exit 4): the server shows another certificate than the
  * pinned one, and the answer was no (`asked`) or there was no terminal to ask.
  */
-export function pinNotReplaced(report: CertificateReport, asked: boolean): Problem {
+export function pinNotReplaced(
+  report: CertificateReport,
+  asked: boolean,
+  variable?: string,
+): Problem {
   const { saved } = report;
   if (report.state !== 'other' || saved === undefined) {
     throw new RangeError('only another certificate than the pinned one is not replaced');
@@ -209,5 +229,6 @@ export function pinNotReplaced(report: CertificateReport, asked: boolean): Probl
     place: saved.place,
     received: report.shown.certificate,
     asked,
+    ...(variable === undefined ? {} : { variable }),
   };
 }

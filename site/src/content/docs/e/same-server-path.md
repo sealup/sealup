@@ -25,3 +25,7 @@ Only one of them can land there, and sealup will not guess which one you meant.
 ## The fix
 
 Change one of the two lines: another server path, or leave the file out of one of them.
+
+The same goes for a `write:` entry on a path an upload sends, or two `write:` entries on one
+path: the file comes from the build or from a secret, not both (see
+[Files written from a secret](/write/)).

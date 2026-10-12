@@ -39,6 +39,11 @@ export type InitStep =
   | { readonly kind: 'server-refused' }
   /** The upload folder answered is not a folder of this project. */
   | { readonly kind: 'upload-refused' }
+  /**
+   * Before the public-repository question (0045): what a yes keeps out of sealup.yml, the server
+   * and, when one was saved (`hostKey`), its host key.
+   */
+  | { readonly kind: 'public-intro'; readonly hostKey: boolean }
   /** Where the password goes; or that sealup.env already holds it (no question then). */
   | { readonly kind: 'password-intro'; readonly kept: boolean }
   /** The password typed cannot be used or written (config's reason). */
@@ -63,7 +68,8 @@ export type InitStep =
    * password was asked here (else the words of a run without a terminal). `samSync`: the
    * project was converted (S03): its files, the package.json scripts that call sam-sync,
    * whether it pulls, whether its files held the password; `secrets`: the variables to add on
-   * GitHub (default: the password's).
+   * GitHub (default: the password's). `public`: the server (and host key) went to sealup.env
+   * (0045), so the secrets' values are there to copy.
    */
   | {
       readonly kind: 'done';
@@ -74,6 +80,7 @@ export type InitStep =
       readonly host: string;
       readonly terminal: boolean;
       readonly secrets?: readonly string[];
+      readonly public?: boolean;
       readonly samSync?: {
         readonly files: readonly string[];
         readonly scripts: readonly string[];
@@ -131,6 +138,9 @@ interface ConvertedStep {
 /** The variable init writes the password to (0022 §6). */
 const secret = 'SEALUP_PASSWORD';
 
+/** The public-repository question (0045), after its `public-intro`; cli asks it, default no. */
+export const publicQuestion = '  Is this repository public?';
+
 const labels = (label: string, value: Line): Line => [`  ${label.padEnd(16)}`, ...value];
 
 const refusals = {
@@ -168,6 +178,24 @@ export function initLines(step: InitStep): Line[] {
       return [refused('Not an address sealup can use: write it as sftp://user@host/folder.')];
     case 'upload-refused':
       return [refused('Name a folder inside this one, such as dist.')];
+    case 'public-intro':
+      return [
+        [],
+        [
+          '  ',
+          style(
+            'Anyone can read sealup.yml in a public repository. sealup can keep the server',
+            'dim',
+          ),
+        ],
+        [
+          '  ',
+          style(
+            `${step.hostKey ? 'and its host key out' : 'out'} of it: in sealup.env here, and in secrets on GitHub.`,
+            'dim',
+          ),
+        ],
+      ];
     case 'password-intro':
       return [
         [],
@@ -294,7 +322,7 @@ function convertedLines(step: ConvertedStep): Line[] {
           [' '.repeat(20), style(`${moved} to sealup.env, never written in sealup.yml`, 'dim')],
         ]),
   ];
-  const dropped = step.dropped.map((key) => (key === 'verbose' ? '-v' : '-n'));
+  const dropped = step.dropped.map((key) => (key === 'verbose' ? '-v' : '--dry-run'));
   if (step.dropped.length > 0) {
     lines.push(...note(`Not needed any more: ${and(step.dropped)} (use ${and(dropped)}).`));
   }
@@ -368,7 +396,7 @@ function doneLines(step: Extract<InitStep, { kind: 'done' }>): Line[] {
     ...(step.hostKey
       ? []
       : ([['sealup keyscan', "check the server's key and save it"]] as [string, string][])),
-    ['sealup deploy -n', 'dry run: list every change, change nothing'],
+    ['sealup deploy --dry-run', 'dry run: list every change, change nothing'],
     ['sealup deploy', `deploy to ${step.host}`],
   ];
   const commandWidth = Math.max(...next.map(([command]) => command.length)) + 4;
@@ -410,6 +438,7 @@ function doneLines(step: Extract<InitStep, { kind: 'done' }>): Line[] {
           ':',
         ],
     ['  ', style('Settings › Secrets and variables › Actions › New repository secret', 'dim')],
+    ...(step.public === true ? [['  ', style('Copy each value from sealup.env.', 'dim')]] : []),
     [],
     ...(samSync === undefined
       ? []

@@ -84,6 +84,8 @@ export const docsSlugs = [
   'certificate-refused',
   // Plan 05, lane B: the risky-folder net (decision 0029).
   'risky-folder',
+  // Plan 06 spec #88 decision 8: a hostKey or tlsFingerprint read from a variable.
+  'key-in-variable',
 ] as const;
 
 export type Slug = (typeof docsSlugs)[number];

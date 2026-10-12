@@ -23,7 +23,7 @@ sealup deploy [target] [flags]
 
 | Flag | What it does |
 |---|---|
-| `-n`, `--dry-run` | Show every change, change nothing |
+| `--dry-run` | Show every change, change nothing |
 | `--mirror` | Also delete server files sealup did not upload (minus excludes). Slower: lists the whole server |
 | `--check-server` | Also put back files changed on the server |
 
@@ -89,7 +89,7 @@ Each stop is exit 6 (exit 2 for the manifest folder) and leaves the server as it
 ## Examples
 
 ```sh
-sealup deploy -n                 # see what would change
+sealup deploy --dry-run          # see what would change
 sealup deploy                    # the only target
 sealup deploy staging            # one of several targets
 sealup deploy production --json  # one JSON object on stdout

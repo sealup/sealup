@@ -24,6 +24,7 @@ import {
 } from './problems.ts';
 import { transportSlug } from './server-words.ts';
 import { tlsSummary } from './tls-words.ts';
+import { variableFixSummary } from './variable-words.ts';
 
 /** A problem in the summary's words. */
 export interface SummaryWords {
@@ -286,12 +287,15 @@ function beforeLogin(
   if (tls !== undefined) return { ...tls, slug: transportSlug(error) };
   if (error.code === 'host-key' && error.received !== undefined && target.hostKey !== undefined) {
     const line = places.hostKey?.line === undefined ? '' : ` (line ${places.hostKey.line})`;
+    const variable = target.fromVariables?.hostKey;
     return {
       title: 'Host key changed',
       box: [
         `${code(server.host)} sent a host key that is not the one in ${code(file)}${line}. sealup stopped before logging in; ${loginNotSent(target).charAt(0).toLowerCase()}${loginNotSent(target).slice(1)}`,
         'Either your host moved the site to a new server, or someone between the runner and the server is intercepting the connection.',
-        `**Fix:** ask your host for the server's fingerprint. If it is the received one, run ${keyscan} on your machine and commit ${code(file)}.`,
+        variable === undefined
+          ? `**Fix:** ask your host for the server's fingerprint. If it is the received one, run ${keyscan} on your machine and commit ${code(file)}.`
+          : variableFixSummary('hostKey', variable, target.name, code),
       ],
       slug: 'host-key-changed',
     };

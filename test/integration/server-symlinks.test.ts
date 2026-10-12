@@ -91,7 +91,11 @@ describe('R16 on the server: a link in a folder the run writes into', () => {
       env,
       server,
     });
-    const dry = await runMain(['deploy', 'production', '-n'], { cwd: project.root, env, server });
+    const dry = await runMain(['deploy', 'production', '--dry-run'], {
+      cwd: project.root,
+      env,
+      server,
+    });
 
     expect(json.exitCode).toBe(6);
     expect(JSON.parse(json.stdout)).toMatchObject({

@@ -164,7 +164,7 @@ describe('the run after a pick', () => {
   });
 
   it('a dry run ends with its own last line, which names the target picked', async () => {
-    const run = await runMain(['deploy', '-n', '--no-color'], {
+    const run = await runMain(['deploy', '--dry-run', '--no-color'], {
       ...options(),
       keys: [down, enter],
     });

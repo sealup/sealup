@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 import { goldenText } from '../../../src/testkit/index.ts';
 import { createProject, productionConfig, ref, runMain } from '../../deploy-kit.ts';
 
-// `sealup help` is `sealup --help`. Not on the page: `-n` and `--debug` among the global flags
+// `sealup help` is `sealup --help`. Not on the page: `--dry-run` and `--debug` among the global flags
 // (this version's own lines, ticket 04's help). The command `init` and `$ sealup init` are the
 // page's lines back (#36).
 const help = [
@@ -28,7 +28,7 @@ const help = [
   '{b}FLAGS{/}',
   '  -c, --config <file>     Use this config file (default: sealup.yml)',
   '      --env-file <file>   Read variables from this file (default: sealup.env)',
-  '  -n, --dry-run           Show every change, change nothing',
+  '      --dry-run           Show every change, change nothing',
   '      --json              Print one JSON object on stdout',
   '  -v, --verbose           Show the file list and timings',
   '  -q, --quiet             Show the result line only',
@@ -39,7 +39,7 @@ const help = [
   '',
   '{b}EXAMPLES{/}',
   '  $ sealup init',
-  '  $ sealup deploy -n',
+  '  $ sealup deploy --dry-run',
   '  $ sealup deploy production',
   '',
   '{b}LEARN MORE{/}',
@@ -69,7 +69,7 @@ const helpDeploy = [
   '  and CI stops with exit 2, listing the names.',
   '',
   '{b}FLAGS{/}',
-  '  -n, --dry-run             Show every change, change nothing',
+  '      --dry-run             Show every change, change nothing',
   '      --mirror              Also delete server files sealup did not upload',
   '                            (minus excludes). Slower: lists the whole server',
   '      --check-server        Also put back files changed on the server',
@@ -83,7 +83,7 @@ const helpDeploy = [
   '  in sealup.yml: allow: for all but the secret file, allowPublic: for it.',
   '',
   '{b}EXAMPLES{/}',
-  '  $ sealup deploy -n                 # see what would change',
+  '  $ sealup deploy --dry-run          # see what would change',
   '  $ sealup deploy                    # the only target',
   '  $ sealup deploy staging            # one of several targets',
   '  $ sealup deploy production --json  # one JSON object on stdout',
@@ -220,7 +220,7 @@ const helpPull = [
   '  Several targets: name one. Without a name, a terminal shows a picker.',
   '',
   '{b}FLAGS{/}',
-  '  -n, --dry-run             List every file to download, change nothing',
+  '      --dry-run             List every file to download, change nothing',
   '',
   '  Global flags: -c, --env-file, --json, -v, -q, --no-color (sealup --help)',
   '',
@@ -231,7 +231,7 @@ const helpPull = [
   '  Links on the server are skipped, never followed.',
   '',
   '{b}EXAMPLES{/}',
-  '  $ sealup pull -n                   # see what would come down',
+  '  $ sealup pull --dry-run            # see what would come down',
   '  $ sealup pull production           # one of several targets',
   '',
   '{b}LEARN MORE{/}',

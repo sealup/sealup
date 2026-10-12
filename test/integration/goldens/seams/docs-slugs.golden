@@ -47,3 +47,4 @@ lock-held
 tls-refused
 certificate-refused
 risky-folder
+key-in-variable

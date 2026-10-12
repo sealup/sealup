@@ -171,14 +171,13 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Every CLI link has a page, no broken link, no sideways scroll at 375 px
+      - name: Every CLI link has a page, no broken link, no sideways scroll at 375 px, the theme switch
         run: npm run check
 
   # The release, rehearsed with nothing published (spec #41 decisions 35, 36): the public export
   # (without the owner's names list, which only the release has), its commit and tag pushed into
   # a local bare repo, the public repo's gates on a clone of it, then release.yml's build and
-  # asset steps as they are (a test holds them equal), with this commit's SHA standing in for the
-  # release commit's.
+  # asset steps as they are (a test holds them equal).
   #
   # In the private repo, whose minutes are counted (ruling 10), it stops after asking the export
   # whether the change touches the public tree: a change to docs/, test/private/, AGENTS.md or
@@ -240,11 +239,11 @@ jobs:
 
       - name: Release build
         if: steps.scope.outputs.public != 'false'
-        run: node scripts/build.ts --release-sha "$GITHUB_SHA"
+        run: node scripts/build.ts
 
       - name: Release assets
         if: steps.scope.outputs.public != 'false'
-        run: node scripts/release-assets.ts "$RUNNER_TEMP/release" --sha "$GITHUB_SHA" --notes "$RUNNER_TEMP/notes.md"
+        run: node scripts/release-assets.ts "$RUNNER_TEMP/release" --notes "$RUNNER_TEMP/notes.md"
 
       - name: Release notes
         if: steps.scope.outputs.public != 'false'

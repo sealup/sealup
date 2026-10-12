@@ -1,10 +1,11 @@
 // Golden S02, "Set up a new project" (CLI page, docs/exploration/assets/06/
 // scenarios-start-daily.js; spec #24 decisions 19-21). `sealup init` in a project with a dist/
 // build folder and a build script: it asks for the server address and the password only, shows
-// the server's key and saves it on a yes, writes every file and says what is left (exit 0).
+// the server's key and saves it on a yes, asks whether the repository is public (0045: on a yes
+// the server and the key go to sealup.env and the workflow's secrets), writes every file and says
+// what is left (exit 0).
 // Without a terminal it stops with exit 2 and names the flag, unless --server is given. The
-// workflow's sealup step is pinned to the release commit's SHA when the build carries it, else
-// to the tag with a comment saying to pin (spec #41 decision 38).
+// workflow's sealup step names sealup's version tag (decision 0043).
 //
 // Adapted, each on purpose:
 // - dist/ holds 3 files (the page's 214 is its mockup's count).
@@ -35,7 +36,8 @@ const files = {
   '.gitignore': 'node_modules\n',
 };
 
-const s02 = [
+/** The screen up to the public question's answer (0045): `y` or `n`. */
+const s02Questions = (publicAnswer: 'y' | 'n') => [
   '  Upload folder   dist/  {d}(found, 3 files){/}',
   '  Build           npm run build  {d}(from package.json, for the GitHub workflow){/}',
   '',
@@ -51,11 +53,19 @@ const s02 = [
   '  If they match, this is your server.',
   '  Save it to sealup.yml as hostKey? [y/N] y',
   '',
+  '  {d}Anyone can read sealup.yml in a public repository. sealup can keep the server{/}',
+  '  {d}and its host key out of it: in sealup.env here, and in secrets on GitHub.{/}',
+  `  Is this repository public? [y/N] ${publicAnswer}`,
+  '',
   '  {d}The password goes in sealup.env, which stays on this machine (git-ignored).{/}',
   `  Password for deploy@ssh.example.com: ${'•'.repeat(password.length)}`,
   '',
   '  {gb}✓ This project is set up.{/} Files written:',
   '    {g}+{/} sealup.yml                     server, password, hostKey, upload: dist',
+];
+
+const s02 = [
+  ...s02Questions('n'),
   '    {g}+{/} sealup.env                     SEALUP_PASSWORD (git-ignored)',
   '    ~ .gitignore                     added the line sealup.env',
   '    {g}+{/} .github/workflows/deploy.yml   on push to main: build, then deploy',
@@ -64,21 +74,33 @@ const s02 = [
   '  {d}Settings › Secrets and variables › Actions › New repository secret{/}',
   '',
   '  {b}Next:{/}',
-  '    sealup deploy -n    dry run: list every change, change nothing',
-  '    sealup deploy       deploy to ssh.example.com',
+  '    sealup deploy --dry-run    dry run: list every change, change nothing',
+  '    sealup deploy              deploy to ssh.example.com',
 ];
 
-const keys = [server, '\r', 'y', '\r', password, '\r'];
-
-/** The sealup step from a build without the release SHA: the tag, and a comment saying to pin. */
-const tagPin = (version: string): string[] => [
-  `      # Pin this step to v${version}'s full commit SHA (on its release page), as the`,
-  '      # steps above are: a tag can move, a commit cannot.',
-  `      - uses: sealup/sealup@v${version}`,
+/** A public repository (0045): the server and the host key go to sealup.env and to secrets. */
+const s02Public = [
+  ...s02Questions('y'),
+  '    {g}+{/} sealup.env                     SEALUP_PASSWORD, SEALUP_SERVER, SEALUP_HOST_KEY (git-ignored)',
+  '    ~ .gitignore                     added the line sealup.env',
+  '    {g}+{/} .github/workflows/deploy.yml   on push to main: build, then deploy',
+  '',
+  '  On GitHub, add the secrets {b}SEALUP_PASSWORD{/}, {b}SEALUP_SERVER{/} and {b}SEALUP_HOST_KEY{/}:',
+  '  {d}Settings › Secrets and variables › Actions › New repository secret{/}',
+  '  {d}Copy each value from sealup.env.{/}',
+  '',
+  '  {b}Next:{/}',
+  '    sealup deploy --dry-run    dry run: list every change, change nothing',
+  '    sealup deploy              deploy to ssh.example.com',
 ];
 
-/** The workflow init writes for this project (npm and a build), with the given sealup step. */
-const workflow = (sealupStep: readonly string[]): string =>
+const keys = [server, '\r', 'y', '\r', '\r', password, '\r'];
+
+/**
+ * The workflow init writes for this project (npm and a build), sealup's step by its version tag,
+ * and the variables it passes from secrets.
+ */
+const workflow = (version: string, variables: readonly string[] = ['SEALUP_PASSWORD']): string =>
   [
     '# Deploys with sealup on every push to main (written by sealup init).',
     `# Secrets go through env:, never as inputs: sealup.yml reads them as $\{NAME}.`,
@@ -114,10 +136,10 @@ const workflow = (sealupStep: readonly string[]): string =>
     '      - name: Build',
     '        run: npm ci && npm run build',
     '',
-    ...sealupStep,
+    `      - uses: sealup/sealup@v${version}`,
     '        id: sealup',
     '        env:',
-    `          SEALUP_PASSWORD: $\{{ secrets.SEALUP_PASSWORD }}`,
+    ...variables.map((name) => `          ${name}: $\{{ secrets.${name} }}`),
     '',
   ].join('\n');
 
@@ -157,18 +179,46 @@ describe('S02: set up a new project', () => {
     }
     expect(readFileSync(join(root, '.gitignore'), 'utf8')).toBe('node_modules\nsealup.env\n');
     expect(readFileSync(join(root, '.github', 'workflows', 'deploy.yml'), 'utf8')).toBe(
-      workflow(tagPin('0.0.0-source')),
+      workflow('0.0.0-source'),
     );
   });
 
-  // Spec #41 decision 38: a release build carries its commit's SHA, and the step is pinned to it.
-  it("pins the workflow's sealup step to the release commit when the build carries its SHA", async () => {
+  // Decision 0045: on a yes, sealup.yml names the server and the key; their values are local.
+  it('keeps the server and the host key out of sealup.yml in a public repository', async () => {
     const root = newProject(files);
-    const releaseSha = '0123456789abcdef0123456789abcdef01234567';
-    const run = await runMain(['init', '--server', server], { cwd: root, releaseSha });
-    expect(run.exitCode, run.stderr).toBe(0);
+    const scan = createMemoryServer();
+    const run = await runMain(['init'], {
+      cwd: root,
+      tty: true,
+      keys: [server, '\r', 'y', '\r', 'y', '\r', password, '\r'],
+      scan: scan.scanHostKey,
+    });
+    expect(screenOf(run.stderr)).toBe(goldenText(s02Public, { color: true }));
+    expect(run.stdout).toBe('');
+    expect(run.exitCode).toBe(0);
+    expect(scan.logins()).toEqual([]);
+
+    expect(readFileSync(join(root, 'sealup.yml'), 'utf8')).toBe(
+      [
+        `server: ${ref('SEALUP_SERVER')}`,
+        `password: ${ref('SEALUP_PASSWORD')}`,
+        `hostKey: ${ref('SEALUP_HOST_KEY')}`,
+        'upload: dist',
+        '',
+      ].join('\n'),
+    );
+    const env = readFileSync(join(root, 'sealup.env'), 'utf8');
+    expect(parseEnv(env)).toEqual({
+      SEALUP_PASSWORD: password,
+      SEALUP_SERVER: server,
+      SEALUP_HOST_KEY: hostKeyLine,
+    });
+    if (process.platform !== 'win32') {
+      expect(statSync(join(root, 'sealup.env')).mode & 0o777).toBe(0o600);
+    }
+    expect(readFileSync(join(root, '.gitignore'), 'utf8')).toBe('node_modules\nsealup.env\n');
     expect(readFileSync(join(root, '.github', 'workflows', 'deploy.yml'), 'utf8')).toBe(
-      workflow([`      - uses: sealup/sealup@${releaseSha} # v0.0.0-source`]),
+      workflow('0.0.0-source', ['SEALUP_PASSWORD', 'SEALUP_SERVER', 'SEALUP_HOST_KEY']),
     );
   });
 

@@ -85,5 +85,5 @@ body:
     id: dry-run
     attributes:
       label: Dry run output
-      description: The output of `sealup deploy --dry-run` (`-n`) for the same target.
+      description: The output of `sealup deploy --dry-run` for the same target.
       render: text

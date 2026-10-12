@@ -17,6 +17,7 @@ import { explainLockHeld } from './lock-words.ts';
 import { loginNotSent, loginOf, wrongProtocol } from './login-words.ts';
 import { explain, fixLines, serverSentence, shownFolder, shownPath } from './problems.ts';
 import { tlsAnnotation } from './tls-words.ts';
+import { updateClause } from './variable-words.ts';
 
 export interface Annotation {
   readonly level: 'error' | 'warning' | 'notice';
@@ -87,7 +88,7 @@ function pageAnnotation(
       return {
         level: 'error',
         title: 'Host key changed',
-        message: `${problem.server.host} sent ${received.fingerprint}; ${file} expects ${expected.fingerprint}. The host moved the site, or someone is intercepting. Ask your host, then run sealup keyscan ${problem.target} on your machine.`,
+        message: `${problem.server.host} sent ${received.fingerprint}; ${file} expects ${expected.fingerprint}. The host moved the site, or someone is intercepting. Ask your host, then ${updateClause('hostKey', problem.variable, problem.target)}.`,
         ...at(problem.place),
       };
     }
@@ -95,7 +96,7 @@ function pageAnnotation(
       return {
         level: 'error',
         title: 'TLS certificate changed',
-        message: `${problem.server.host} showed SHA-256 ${problem.received.sha256}; ${file} pins ${problem.expected}. The host renewed it, or someone is intercepting. Ask your host, then run sealup keyscan ${problem.target} on your machine.`,
+        message: `${problem.server.host} showed SHA-256 ${problem.received.sha256}; ${file} pins ${problem.expected}. The host renewed it, or someone is intercepting. Ask your host, then ${updateClause('tlsFingerprint', problem.variable, problem.target)}.`,
         ...at(problem.place),
       };
     case 'target-not-named': {
@@ -233,7 +234,7 @@ function beforeLogin(error: TransportError, target: Target, file: string): Annot
     return {
       level: 'error',
       title: 'Host key changed',
-      message: `${server.host} sent ${error.received.fingerprint}; ${file} expects ${target.hostKey.fingerprint}. The host moved the site, or someone is intercepting. Ask your host, then run sealup keyscan ${target.name} on your machine. ${loginNotSent(target)}`,
+      message: `${server.host} sent ${error.received.fingerprint}; ${file} expects ${target.hostKey.fingerprint}. The host moved the site, or someone is intercepting. Ask your host, then ${updateClause('hostKey', target.fromVariables?.hostKey, target.name, 'deploy')}. ${loginNotSent(target)}`,
       ...(places.hostKey === undefined ? {} : at(places.hostKey)),
     };
   }

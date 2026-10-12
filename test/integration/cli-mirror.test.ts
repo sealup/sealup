@@ -50,7 +50,7 @@ describe('sealup deploy --mirror', () => {
   it('lists every delete in the dry run with its reason, and changes nothing', async () => {
     const site = strayServer();
 
-    const run = await site.run(['deploy', '-n', '--mirror', '--json']);
+    const run = await site.run(['deploy', '--dry-run', '--mirror', '--json']);
 
     expect(run.exitCode).toBe(0);
     const lines = run.stderr.split('\n');
@@ -246,7 +246,7 @@ describe('the full mirror and server links (R16, spec #41 decisions 27-28)', () 
     site.server.seedLink('/home/site/old/storage', '/home/deploy/storage');
 
     for (const argv of [
-      ['deploy', '-n', '--mirror'],
+      ['deploy', '--dry-run', '--mirror'],
       ['deploy', '--mirror'],
     ]) {
       const run = await site.run(argv);
@@ -262,7 +262,7 @@ describe('the full mirror and server links (R16, spec #41 decisions 27-28)', () 
     site.server.seedLink('/home/site/old/storage', '/home/deploy/storage');
     site.server.seedFile('/home/deploy/storage/avatar.png', 'behind the link');
 
-    const dry = await site.run(['deploy', '-n', '--mirror']);
+    const dry = await site.run(['deploy', '--dry-run', '--mirror']);
     expect(dry.stderr.split('\n')).toContain(
       '    · old/storage  a link on the server, never deleted',
     );

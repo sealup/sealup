@@ -25,7 +25,7 @@
 //
 // Must never know: ssh2, the plan rules, the manifest format.
 //
-// Status (tickets 04, 07, 08, 09): `deploy [target]`, `-c`, `--env-file`, `-n`, `-v`,
+// Status (tickets 04, 07, 08, 09): `deploy [target]`, `-c`, `--env-file`, `--dry-run`, `-v`,
 // `--json`, `--no-color`, `--debug`, `-h`, `--version`; sealup.yml is found from the current
 // folder up to the repo root unless `-c` names it; `-c` and `--env-file` are relative to the
 // current folder. An error sealup did not expect ends with a state line and its docs link like
@@ -66,6 +66,7 @@ import {
   findConfig,
   loadConfig,
   type ResolvedConfig,
+  readKeyVariable,
   saveHostKey,
 } from '../config/index.ts';
 import {
@@ -73,11 +74,12 @@ import {
   ExitCode,
   type Problem,
   type Reporter,
+  revealingValues,
   type ScanCertificate,
   type ScanHostKey,
   type Secret,
 } from '../contracts/index.ts';
-import { deploy, type Runner, stopped } from '../deploy/index.ts';
+import { deploy, stopped } from '../deploy/index.ts';
 import { keyscanTarget, notReplaced, scanKey } from '../keyscan/index.ts';
 import { pull } from '../pull/index.ts';
 import {
@@ -108,6 +110,7 @@ import {
 
 import { cacheFolder } from './cache-folder.ts';
 import { certificateKeyscan } from './certificate-keyscan.ts';
+import { runnerOf, unicodeTerminal, usageProblem } from './environment.ts';
 import { initCommand } from './init.ts';
 import { askTarget, createPrompts, type Keyboard } from './prompts.ts';
 import { readVersion } from './version.ts';
@@ -161,11 +164,6 @@ export interface CliIo {
    * start-up (spec #41 decision 34). Default `0.0.0-source`.
    */
   readonly version?: string;
-  /**
-   * The release commit's full SHA, when the release build put it in the bundle: init pins the
-   * workflow's sealup step to it (spec #41 decision 38).
-   */
-  readonly releaseSha?: string;
   /** This machine's name, for the lock's note (decision 0031). Default: `os.hostname()`. */
   readonly machine?: string;
   /**
@@ -181,7 +179,7 @@ const options = {
   'no-color': { type: 'boolean' },
   help: { type: 'boolean', short: 'h' },
   version: { type: 'boolean' },
-  'dry-run': { type: 'boolean', short: 'n' },
+  'dry-run': { type: 'boolean' },
   // deploy only: the server check for this run (spec #41 decision 26).
   'check-server': { type: 'boolean' },
   // deploy only: the full mirror for this run (decision 0030).
@@ -217,10 +215,23 @@ export async function main(argv: readonly string[], env: Env, io: CliIo): Promis
   });
   /** Set once the log's first lines are out: they come before any other byte (0024 §9). */
   let begun = false;
-  const begin = (secrets: readonly Secret[] = []): void => {
+  /**
+   * What sealup.yml gave to mask, once it is read: its secrets (R2) and the values its targets
+   * read from a variable (0045). Every log start after that masks them, whoever calls it.
+   */
+  let configMasks: { secrets: readonly Secret[]; hidden: readonly string[] } = {
+    secrets: [],
+    hidden: [],
+  };
+  const begin = (secrets: readonly Secret[] = [], hidden: readonly string[] = []): void => {
     if (begun) return;
     begun = true;
-    printLogStart(stderr(true), form, { version, ...logWords(argv), secrets });
+    printLogStart(stderr(true), form, {
+      version,
+      ...logWords(argv),
+      secrets: [...configMasks.secrets, ...secrets],
+      hidden: [...configMasks.hidden, ...hidden],
+    });
   };
   const debug = argv.includes('--debug');
   /** The run's reporters: the human one on stderr, and with --json the JSON one on stdout. */
@@ -376,7 +387,6 @@ export async function main(argv: readonly string[], env: Env, io: CliIo): Promis
         out,
         form,
         version,
-        releaseSha: io.releaseSha,
         server: values.server,
         from: values.from,
         json: flags.json ? io.stdout : undefined,
@@ -385,7 +395,7 @@ export async function main(argv: readonly string[], env: Env, io: CliIo): Promis
       });
     }
 
-    const loaded = await load();
+    const loaded = await load(undefined, { logStart: command === 'keyscan' ? 'later' : 'always' });
     if (typeof loaded === 'number') return loaded;
     // Without a terminal nothing prompts, and pull is refused (0023 §7, S25): right after
     // reading sealup.yml, before the target's variables or any connection.
@@ -488,10 +498,11 @@ export async function main(argv: readonly string[], env: Env, io: CliIo): Promis
     /**
      * Finds and reads sealup.yml (or the `-c` file) and its variables. The secrets the file gave
      * are masked before anything is said about it (R2). A problem is printed: its exit code.
+     * `later`: the caller starts the log itself (keyscan, which may first scan a key to mask).
      */
     async function load(
       found?: Awaited<ReturnType<typeof findConfig>>,
-      options: { readonly logStart: 'always' | 'on-problem' } = { logStart: 'always' },
+      options: { readonly logStart: 'always' | 'on-problem' | 'later' } = { logStart: 'always' },
     ): Promise<ResolvedConfig | number> {
       const file =
         found ??
@@ -505,7 +516,12 @@ export async function main(argv: readonly string[], env: Env, io: CliIo): Promis
         env,
         envFile === undefined ? {} : { envFile: resolve(io.cwd, envFile) },
       );
-      if (options.logStart === 'always' || !loaded.ok) begin(loaded.secrets);
+      // A value read from a variable (0045) is masked in GitHub's form whatever the command
+      // prints next (`sealup` alone shows a target's host when it has no url).
+      configMasks = { secrets: loaded.secrets, hidden: loaded.hidden };
+      const masks = form === 'github' && loaded.hidden.length > 0;
+      const now = options.logStart === 'always' || (options.logStart === 'on-problem' && masks);
+      if (now || !loaded.ok) begin();
       if (!loaded.ok) return stop({ code: 'config', issues: loaded.issues });
       return loaded.config;
     }
@@ -551,6 +567,8 @@ export async function main(argv: readonly string[], env: Env, io: CliIo): Promis
      */
     async function keyscanCommand(config: ResolvedConfig, named: string | undefined) {
       keyscanFacts = { configFile: config.file };
+      // GitHub's form may scan first (below); every other form starts its log at once.
+      if (form !== 'github') begin();
       const asking = io.stdinIsTTY && io.stderrIsTTY;
       let prompts: ReturnType<typeof createPrompts> | undefined;
       const ask = () => {
@@ -566,7 +584,19 @@ export async function main(argv: readonly string[], env: Env, io: CliIo): Promis
       if ('problem' in chosen) return stop(chosen.problem);
       const { target } = chosen;
       keyscanFacts = { ...keyscanFacts, target: target.name, server: target.server };
-      printKeyscan(out, form, { kind: 'target', name: target.name, server: target.server });
+      // Any part read from a variable (0045): in GitHub's form the key the server shows is masked
+      // too, as it gives the server away, so the scan comes first and its key joins the masks.
+      const scanFirst =
+        form === 'github' && target.server.protocol !== 'ftp' && target.fromVariables !== undefined;
+      let shown = false;
+      /** The log's first lines, then the target block: once only. */
+      const showTarget = (received: readonly string[] = []): void => {
+        if (shown) return;
+        shown = true;
+        begin([], received);
+        printKeyscan(out, form, { kind: 'target', name: target.name, server: target.server });
+      };
+      if (!scanFirst) showTarget();
       // Plain FTP has no host key: nothing to scan, nothing to trust (spec #41 decision 12).
       if (target.server.protocol === 'ftp') {
         printKeyscan(out, form, { kind: 'no-key', configFile: config.file, place: target.place });
@@ -584,6 +614,7 @@ export async function main(argv: readonly string[], env: Env, io: CliIo): Promis
             out,
             form,
             again: [...(config.targets.size > 1 ? [target.name] : []), ...applyArgs(values)],
+            scanned: showTarget,
             record: (certificate, done) => {
               keyscanFacts = { ...keyscanFacts, certificate };
               if (done && flags.json) printKeyscanJson(io.stdout, version, keyscanFacts);
@@ -595,6 +626,8 @@ export async function main(argv: readonly string[], env: Env, io: CliIo): Promis
         );
       }
       const scanned = await scanKey(target, io.scanHostKey, io.signal);
+      const key = 'problem' in scanned ? undefined : scanned.report.shown;
+      showTarget(key === undefined ? [] : revealingValues({ hostKey: key }));
       if ('problem' in scanned) {
         printKeyscan(out, form, { kind: 'not-checked' });
         return stop(scanned.problem);
@@ -609,10 +642,24 @@ export async function main(argv: readonly string[], env: Env, io: CliIo): Promis
       // The command to run again: the target named only when the file has several.
       const again = [...(config.targets.size > 1 ? [target.name] : []), ...applyArgs(values)];
       const where = form === 'github' ? 'github' : 'log';
-      printKeyscan(out, form, { kind: 'found', report, asking, where, again });
+      // A hostKey read from a `${NAME}` is never written over: no question, the line and the
+      // variable to set; the exit code of a key not saved (plan 06 spec #88 decision 8).
+      const variable = await readKeyVariable(config.file, target.name, 'hostKey');
+      printKeyscan(out, form, {
+        kind: 'found',
+        report,
+        asking,
+        where,
+        again,
+        ...(variable === undefined ? {} : { variable }),
+      });
       if (report.state === 'same') return done('already-saved');
-      if (!asking) {
-        return report.state === 'other' ? stop(notReplaced(report, false)) : done('not-saved');
+      // Nothing to ask: a key in a variable is never written over, and without a terminal no
+      // key is written at all. Another key than the saved one is exit 4.
+      if (variable !== undefined || !asking) {
+        return report.state === 'other'
+          ? stop(notReplaced(report, false, variable))
+          : done('not-saved');
       }
 
       const question =
@@ -665,40 +712,6 @@ export async function main(argv: readonly string[], env: Env, io: CliIo): Promis
       return ExitCode.ok;
     }
   }
-}
-
-/**
- * Whether a terminal shows ✓ ✗ ━ ─ (decision 0024 §3; the is-unicode-supported rules, from the
- * injected environment): everywhere but the Linux console, and on Windows only in terminals
- * known to (Windows Terminal, VS Code, JetBrains, ConEmu/Cmder, Terminus, Alacritty, xterm) or
- * in CI. The legacy Windows console's font lacks them. Without a terminal the bytes go to a file
- * or a pipe as UTF-8, so the symbols stay.
- */
-function unicodeTerminal(platform: string, env: Env): boolean {
-  if (platform !== 'win32') return env.TERM !== 'linux';
-  return (
-    Boolean(env.CI) ||
-    Boolean(env.WT_SESSION) ||
-    Boolean(env.TERMINUS_SUBLIME) ||
-    env.ConEmuTask === '{cmd::Cmder}' ||
-    env.TERM_PROGRAM === 'Terminus-Sublime' ||
-    env.TERM_PROGRAM === 'vscode' ||
-    env.TERM === 'xterm-256color' ||
-    env.TERM === 'alacritty' ||
-    env.TERMINAL_EMULATOR === 'JetBrains-JediTerm'
-  );
-}
-
-/**
- * Who runs this deploy, for the lock's note (decision 0031): the machine's name, and in GitHub
- * Actions the run's page, from the variables the runner sets.
- */
-function runnerOf(env: Env, machine: string): Runner {
-  const { GITHUB_ACTIONS, GITHUB_SERVER_URL, GITHUB_REPOSITORY, GITHUB_RUN_ID } = env;
-  const inActions = GITHUB_ACTIONS === 'true' && GITHUB_SERVER_URL !== undefined;
-  return inActions && GITHUB_REPOSITORY !== undefined && GITHUB_RUN_ID !== undefined
-    ? { machine, ciRun: `${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}` }
-    : { machine };
 }
 
 function parse(argv: readonly string[]) {
@@ -759,22 +772,7 @@ function unparsedFlags(argv: readonly string[]): {
 } {
   return {
     json: argv.includes('--json'),
-    dryRun: argv.includes('-n') || argv.includes('--dry-run'),
+    dryRun: argv.includes('--dry-run'),
     command: argv.includes('deploy') ? 'deploy' : argv.includes('pull') ? 'pull' : null,
   };
-}
-
-/** parseArgs' error as facts (report words them): the flag it names, never a value. */
-function usageProblem(error: unknown): Problem {
-  const code = (error as { code?: unknown }).code;
-  const message = error instanceof Error ? error.message : '';
-  const named = (flag: string | undefined) => (flag === undefined ? {} : { name: flag });
-  if (code === 'ERR_PARSE_ARGS_UNKNOWN_OPTION') {
-    return { code: 'usage', reason: 'unknown-flag', ...named(/'([^']+)'/.exec(message)?.[1]) };
-  }
-  if (code === 'ERR_PARSE_ARGS_INVALID_OPTION_VALUE') {
-    const flag = /'(-\w, --[\w-]+|--[\w-]+)/.exec(message)?.[1];
-    return { code: 'usage', reason: 'missing-value', ...named(flag) };
-  }
-  throw error;
 }

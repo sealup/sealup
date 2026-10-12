@@ -7,6 +7,7 @@
 // at all three byte alignments (so `user:password` in base64 is found too), hex in both cases.
 // A failure names the canary's variable, the place and the form, never the value.
 
+import { createHash } from 'node:crypto';
 import { readdir, readFile } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
 import { userKey } from './keys.ts';
@@ -156,6 +157,99 @@ export function splitMasks(log: string): { readonly masks: string; readonly rest
   const first = lines.findIndex((line) => !line.startsWith('::add-mask::'));
   const end = first === -1 ? lines.length : first;
   return { masks: lines.slice(0, end).join('\n'), rest: lines.slice(end).join('\n') };
+}
+
+/** The canary host key of a hidden server: a real key line, made fresh in this process. */
+const hiddenHostKey = userKey().publicLine;
+const hiddenFingerprint = `SHA256:${createHash('sha256')
+  .update(Buffer.from(hiddenHostKey.split(' ')[1] ?? '', 'base64'))
+  .digest('base64')
+  .replace(/=+$/, '')}`;
+
+/**
+ * The canary server and host key of a public repository (decision 0045), as environment
+ * variables, for a config that reads them (`server: ${SEALUP_CANARY_SERVER}`). Not secrets: a
+ * terminal shows them whole (R22); GitHub's form masks them, and the job summary never holds
+ * them. A memory server shows the key with `createMemoryServer({ hostKeyLine })`.
+ */
+export const hiddenCanaries: Readonly<{
+  SEALUP_CANARY_SERVER: string;
+  SEALUP_CANARY_HOST_KEY: string;
+}> = {
+  SEALUP_CANARY_SERVER: 'sftp://cn4ry-user@cn4ry-host.example.com/home/site',
+  SEALUP_CANARY_HOST_KEY: hiddenHostKey,
+};
+
+/** Each hidden canary and the parts of it a run prints alone, searched in every form. */
+const hiddenParts: Readonly<Record<string, string>> = {
+  ...hiddenCanaries,
+  'SEALUP_CANARY_SERVER (user)': 'cn4ry-user',
+  'SEALUP_CANARY_SERVER (host)': 'cn4ry-host.example.com',
+  'SEALUP_CANARY_HOST_KEY (fingerprint)': hiddenFingerprint,
+};
+
+const maskCommand = '::add-mask::';
+
+/** The value a `::add-mask::` line registers, GitHub's escapes read back. */
+function maskedValue(line: string): string {
+  return line
+    .slice(maskCommand.length)
+    .replaceAll('%0D', '\r')
+    .replaceAll('%0A', '\n')
+    .replaceAll('%25', '%');
+}
+
+/** A text with each value replaced by `***`, longest first. */
+function hideAll(text: string, values: readonly string[]): string {
+  const longest = values.filter((value) => value !== '').sort((a, b) => b.length - a.length);
+  return longest.reduce((shown, value) => shown.replaceAll(value, '***'), text);
+}
+
+/**
+ * What GitHub shows of a text once every `::add-mask::` line of a GitHub-form log is registered,
+ * the leading ones and any later one: each value replaced by `***`. For a text written once
+ * the run is over (the `--json` object), or a log whose masks all lead it; `githubLog` reads a
+ * log with later masks line by line. For the hidden canaries only: a secret sealup redacts
+ * itself, and is checked without masks.
+ */
+export function githubMasks(log: string): (text: string) => string {
+  const values = log
+    .split('\n')
+    .filter((line) => line.startsWith(maskCommand))
+    .map(maskedValue);
+  return (text) => hideAll(text, values);
+}
+
+/**
+ * A GitHub-form log after its leading masks, as GitHub shows it: a mask line later in the log
+ * (a key the server showed, decision 0045) hides its value from the lines after it only, and
+ * is not shown itself. The leading masks hide their values everywhere.
+ */
+export function githubLog(log: string): string {
+  const { masks, rest } = splitMasks(log);
+  const values = masks === '' ? [] : masks.split('\n').map(maskedValue);
+  const shown: string[] = [];
+  for (const line of rest.split('\n')) {
+    if (line.startsWith(maskCommand)) values.push(maskedValue(line));
+    else shown.push(hideAll(line, values));
+  }
+  return shown.join('\n');
+}
+
+/**
+ * Throws when a hidden canary, or its user, host or fingerprint, shows in a place (decision
+ * 0045): a GitHub-form log once read through `githubLog` or `githubMasks`, or the job summary as
+ * it is. `also`: more values the run must hide, by name (a key the test's server shows). The
+ * message names the canary, never its value.
+ */
+export function expectHiddenMasked(
+  places: Places,
+  also: Readonly<Record<string, string>> = {},
+): void {
+  const leaks = findLeaks(places, { ...hiddenParts, ...also });
+  if (leaks.length === 0) return;
+  const lines = leaks.map((leak) => `${leak.canary} unmasked in ${leak.place} as ${leak.form}`);
+  throw new Error(`hidden server leak (decision 0045):\n${lines.join('\n')}`);
 }
 
 /** The files under a folder (a server's root on disk), keyed by `/`-separated relative path. */

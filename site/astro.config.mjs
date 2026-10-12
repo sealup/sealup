@@ -3,6 +3,7 @@
 
 import starlight from '@astrojs/starlight';
 import { defineConfig } from 'astro/config';
+import { sidebar } from './src/sidebar.ts';
 
 export default defineConfig({
   site: 'https://sealup.dev',
@@ -20,34 +21,10 @@ export default defineConfig({
       },
       favicon: '/favicon.svg',
       social: [{ icon: 'github', label: 'GitHub', href: 'https://github.com/sealup/sealup' }],
+      // The theme switch, one button shared with the home page (plan 06 ruling 4).
+      components: { ThemeSelect: './src/components/ThemeSwitch.astro' },
       customCss: ['./src/styles/fonts.css', './src/styles/brand.css'],
-      sidebar: [
-        {
-          label: 'Start here',
-          items: ['getting-started', 'ovh'],
-        },
-        {
-          label: 'Protocols',
-          items: ['sftp', 'ssh', 'ftps', 'ftp', 'private-keys'],
-        },
-        {
-          label: 'Deploys',
-          items: ['mirror', 'check-server', 'lock', 'allow', 'github-action'],
-        },
-        {
-          label: 'Commands',
-          items: ['init', 'deploy', 'pull', 'keyscan', 'check'],
-        },
-        {
-          label: 'Reference',
-          items: ['config', 'exit-codes', 'security'],
-        },
-        {
-          label: 'Errors',
-          collapsed: true,
-          items: [{ autogenerate: { directory: 'e' } }],
-        },
-      ],
+      sidebar,
     }),
   ],
 });

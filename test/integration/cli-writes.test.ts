@@ -24,7 +24,7 @@ describe('write: what main() prints', () => {
     const project = createProject(writing, site);
     const server = createMemoryServer({ loginFolder: '/home/deploy' });
 
-    const run = await runMain(['deploy', '-n'], { cwd: project.root, env, server });
+    const run = await runMain(['deploy', '--dry-run'], { cwd: project.root, env, server });
 
     expect(run.exitCode).toBe(0);
     expect(run.stderr).toBe(
@@ -66,7 +66,11 @@ describe('write: what main() prints', () => {
     const project = createProject(writing, site);
     const server = createMemoryServer({ loginFolder: '/home/deploy' });
 
-    const dry = await runMain(['deploy', '-n', '--json'], { cwd: project.root, env, server });
+    const dry = await runMain(['deploy', '--dry-run', '--json'], {
+      cwd: project.root,
+      env,
+      server,
+    });
     const real = await runMain(['deploy', '--json'], { cwd: project.root, env, server });
     const again = await runMain(['deploy', '--json'], { cwd: project.root, env, server });
 
@@ -90,7 +94,7 @@ describe('write: what main() prints', () => {
     const project = createProject(writing, site);
     const server = createMemoryServer({ loginFolder: '/home/deploy' });
 
-    const run = await runMain(['deploy', '-n'], {
+    const run = await runMain(['deploy', '--dry-run'], {
       cwd: project.root,
       env: { ...env, ...inGitHub },
       server,
@@ -135,7 +139,7 @@ describe('write: what main() prints', () => {
     const server = createMemoryServer({ loginFolder: '/home/deploy' });
     const github = { ...env, ...inGitHub };
 
-    const dry = await runMain(['deploy', '-n'], { cwd: project.root, env: github, server });
+    const dry = await runMain(['deploy', '--dry-run'], { cwd: project.root, env: github, server });
     const real = await runMain(['deploy'], { cwd: project.root, env: github, server });
 
     // runMain's leak check read both summaries: the multi-line canary is in neither.

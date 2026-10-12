@@ -29,7 +29,7 @@ describe('the log form (no terminal, not GitHub)', () => {
   it('starts with the version line: sealup <version> · <command> [target], no flag', async () => {
     const project = createProject(productionConfig(), site);
     const server = createMemoryServer({ loginFolder: '/home/deploy' });
-    const run = await runMain(['deploy', '-n', 'production', '-c', 'sealup.yml'], {
+    const run = await runMain(['deploy', '--dry-run', 'production', '-c', 'sealup.yml'], {
       cwd: project.root,
       env,
       server,
@@ -83,7 +83,7 @@ describe('the log form (no terminal, not GitHub)', () => {
   it('has no timing line after a dry run or an error (S10, S16 CI forms)', async () => {
     const project = createProject(productionConfig(), site);
     const server = createMemoryServer({ loginFolder: '/home/deploy' });
-    const dry = await runMain(['deploy', '-n'], { cwd: project.root, env, server });
+    const dry = await runMain(['deploy', '--dry-run'], { cwd: project.root, env, server });
     const failed = await runMain(['deploy', 'nope'], { cwd: project.root, env, server });
     expect(dry.stderr).not.toContain('connect');
     expect(failed.stderr).not.toContain('connect');
@@ -246,7 +246,7 @@ describe('the GitHub form (GITHUB_ACTIONS=true, no terminal)', () => {
   it('has no group when nothing changed, nor on a dry run, which lists every change', async () => {
     const project = createProject(productionConfig(), site);
     const server = createMemoryServer();
-    const dry = await runMain(['deploy', '-n', '--no-color'], {
+    const dry = await runMain(['deploy', '--dry-run', '--no-color'], {
       cwd: project.root,
       env: github,
       server,
@@ -320,7 +320,7 @@ describe('-q, a quiet run (spec #24 decision 17)', () => {
 
   it('keeps a dry run’s labels and drops its list', async () => {
     const { root, server } = await changedSite();
-    const run = await runMain(['deploy', '-n', '-q'], { cwd: root, env, server });
+    const run = await runMain(['deploy', '--dry-run', '-q'], { cwd: root, env, server });
     expect(run.stderr.split('\n')).toEqual([
       'sealup 0.0.0-source · deploy',
       '  DRY RUN  nothing will change on production',

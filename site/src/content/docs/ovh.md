@@ -94,7 +94,7 @@ Run `sealup check` to read the file and its variables without connecting.
 Look at the dry run, then deploy:
 
 ```sh
-npx sealup deploy -n
+npx sealup deploy --dry-run
 npx sealup deploy
 ```
 

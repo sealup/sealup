@@ -119,7 +119,7 @@ function verdict(report: CheckReport, words: CheckWords): Line[] {
     .filter(({ problem }) => problem !== undefined)
     .map((target) => ` ${target.name} ${needs(target)}`);
   const name = report.named || report.targets.length > 1 ? [ready[0]?.name ?? ''] : [];
-  const dryRun = ['sealup', 'deploy', '-n', ...name, ...words.applyArgs].join(' ');
+  const dryRun = ['sealup', 'deploy', '--dry-run', ...name, ...words.applyArgs].join(' ');
   const lines: Line[] = [
     [
       '  ',

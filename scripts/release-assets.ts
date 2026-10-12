@@ -1,16 +1,15 @@
 // The release assets (decision 0017; spec #41 decision 36), from a built project (scripts/build.ts
-// with --release-sha first): what the public release attests and attaches to its GitHub release.
+// first): what the public release attests and attaches to its GitHub release.
 // The public release.yml runs it, and so does CI's release dry run on each pull request.
 //
-//   node scripts/release-assets.ts <out> --sha <release commit> [--notes <file>] [--root <folder>]
+//   node scripts/release-assets.ts <out> [--notes <file>] [--root <folder>]
 //
 // <out>     must not exist yet, or be empty; it receives exactly the release's assets:
 //             sealup-<version>.tgz   the npm package (`npm pack`), checked by the package gate
 //             action.mjs             the action's bundle, dist/action.mjs
 //             SHA256SUMS             both files' SHA-256, as `sha256sum -c` reads it
-// --sha     the release commit's full SHA, for the pinned action line of the notes
 // --notes   writes the release notes there: this version's CHANGELOG.md section, how to use it
-//           pinned by SHA, and the verify commands
+//           (the action by its version tag, 0043), and the verify commands
 // --root    the project (default: the repo)
 //
 // Exit 0 when written, 1 when the package gate or a step fails, 2 on a usage error.
@@ -34,38 +33,33 @@ import { repoRoot } from './gates.ts';
 
 interface Options {
   readonly out: string;
-  readonly sha: string;
   readonly notes: string | undefined;
   readonly root: string;
 }
 
 function options(argv: readonly string[]): Options | string {
-  let values: { sha?: string; notes?: string; root?: string };
+  let values: { notes?: string; root?: string };
   let positionals: string[];
   try {
     ({ values, positionals } = parseArgs({
       args: [...argv],
       allowPositionals: true,
-      options: { sha: { type: 'string' }, notes: { type: 'string' }, root: { type: 'string' } },
+      options: { notes: { type: 'string' }, root: { type: 'string' } },
     }));
   } catch (error) {
     return error instanceof Error ? error.message : String(error);
-  }
-  if (values.sha === undefined || !/^[0-9a-f]{40}$/.test(values.sha)) {
-    return '--sha must be the release commit full SHA (40 hex digits)';
   }
   if (positionals.length !== 1) return 'give one output folder';
   const out = resolve(positionals[0] ?? '');
   if (existsSync(out) && readdirSync(out).length > 0) return `${out} is not empty`;
   return {
     out,
-    sha: values.sha,
     notes: values.notes === undefined ? undefined : resolve(values.notes),
     root: resolve(values.root ?? repoRoot),
   };
 }
 
-/** This version's section of a release-please CHANGELOG.md, without its heading. */
+/** This version's section of the public CHANGELOG.md (decision 0042), without its heading. */
 function changelogSection(changelog: string, version: string): string | undefined {
   const lines = changelog.split(/\r?\n/);
   const v = version.replaceAll('.', '\\.');
@@ -79,7 +73,7 @@ function changelogSection(changelog: string, version: string): string | undefine
     .trim();
 }
 
-function releaseNotes(version: string, sha: string, changes: string | undefined): string {
+function releaseNotes(version: string, changes: string | undefined): string {
   const tag = `v${version}`;
   const tarball = `sealup-${version}.tgz`;
   return [
@@ -91,10 +85,10 @@ function releaseNotes(version: string, sha: string, changes: string | undefined)
     `npx sealup@${version} init`,
     '```',
     '',
-    "In GitHub Actions, pinned to this release's commit (`sealup init` writes it for you):",
+    'In GitHub Actions (`sealup init` writes it for you):',
     '',
     '```yaml',
-    `- uses: sealup/sealup@${sha} # ${tag}`,
+    `- uses: sealup/sealup@${tag}`,
     '```',
     '',
     'The npm version is staged by this release and appears on npm once the maintainer approves it with 2FA.',
@@ -150,7 +144,7 @@ function assets(o: Options): string {
         ? changelogSection(readFileSync(changelog, 'utf8'), version)
         : undefined;
       if (changes === undefined) console.error(`note: CHANGELOG.md has no ${version} section`);
-      writeFileSync(o.notes, releaseNotes(version, o.sha, changes));
+      writeFileSync(o.notes, releaseNotes(version, changes));
     }
     return `release assets: ${tarball}, action.mjs and SHA256SUMS in ${o.out}`;
   } finally {
@@ -162,9 +156,7 @@ if (import.meta.main) {
   const parsed = options(process.argv.slice(2));
   if (typeof parsed === 'string') {
     console.error(`release assets: ${parsed}`);
-    console.error(
-      'usage: node scripts/release-assets.ts <out> --sha <sha> [--notes <file>] [--root <folder>]',
-    );
+    console.error('usage: node scripts/release-assets.ts <out> [--notes <file>] [--root <folder>]');
     process.exitCode = 2;
   } else {
     try {

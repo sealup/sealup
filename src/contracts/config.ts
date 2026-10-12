@@ -186,6 +186,57 @@ export interface Target {
   readonly checkServer: boolean;
   /** Where its connection keys are in the config. */
   readonly places: TargetPlaces;
+  /**
+   * The parts read from a variable (decision 0045), each with the variable's name; absent when
+   * none is. In GitHub's form their values are masked; the job summary names the variable.
+   */
+  readonly fromVariables?: FromVariables;
+}
+
+/**
+ * The parts of a target whose whole value in sealup.yml is one `${NAME}` reference (`server:
+ * ${SEALUP_SERVER}`, the `:?message` form too), each with the variable's name (decision 0045).
+ * A part written in plain text, or with a variable inside other text, is not here. `hostKey` and
+ * `tlsFingerprint` are told whatever the protocol: `keyscan --save` must never write over one.
+ */
+export interface FromVariables {
+  readonly server?: string;
+  readonly hostKey?: string;
+  readonly tlsFingerprint?: string;
+}
+
+/**
+ * A part of a target that gives its server away (decision 0045): the server as written and, when
+ * it parses, its user and host; a host key (its line, its `<type> <key>`, its fingerprint, as
+ * much as is known); an FTPS certificate's SHA-256, as written.
+ */
+export type RevealingPart =
+  | { readonly server: string; readonly url?: Pick<ServerUrl, 'user' | 'host'> }
+  | {
+      readonly hostKey: { readonly line?: string } & Partial<HostKey>;
+    }
+  | { readonly certificate: string };
+
+/**
+ * The values that show a part (decision 0045), each one GitHub's form masks when the target has a
+ * part read from a variable: the one list config, keyscan and the reporters mask from. Empty
+ * values are left out; a SHA-256 also in upper case, as tlsFingerprint is compared.
+ */
+export function revealingValues(part: RevealingPart): string[] {
+  const values =
+    'server' in part
+      ? [part.server, part.url?.user, part.url?.host]
+      : 'hostKey' in part
+        ? [
+            part.hostKey.line,
+            part.hostKey.type === undefined || part.hostKey.key === undefined
+              ? undefined
+              : `${part.hostKey.type} ${part.hostKey.key}`,
+            part.hostKey.fingerprint,
+          ]
+        : [part.certificate, part.certificate.toUpperCase()];
+  const known = values.filter((value): value is string => value !== undefined && value !== '');
+  return [...new Set(known)];
 }
 
 /**

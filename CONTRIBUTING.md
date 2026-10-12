@@ -23,7 +23,7 @@ npm run test:e2e      # deploys to real servers in containers
 
 ## Commits
 
-Commit messages and pull request titles follow [Conventional Commits](https://www.conventionalcommits.org/): `fix: …`, `feat: …`, `docs: …`, `test: …`, `ci: …`, `chore: …`, with `!` after the type for a breaking change. The changelog and the next version are made from them.
+Commit messages and pull request titles follow [Conventional Commits](https://www.conventionalcommits.org/): `fix: …`, `feat: …`, `docs: …`, `test: …`, `ci: …`, `chore: …`, with `!` after the type for a breaking change. The next version is made from them, and so is the start of each release's changelog.
 
 ## Before a large pull request
 

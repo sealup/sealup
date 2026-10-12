@@ -5,12 +5,11 @@
 // on the sources only, never on the output folder (check-dist compares them). It also
 // writes `schema.json` at the package root from the config schema (decision 0012; scripts/schema.ts).
 //
-//   node scripts/build.ts [--outdir <folder>] [--release-sha <sha>]   default: dist/
+//   node scripts/build.ts [--outdir <folder>]   default: dist/
 //
 // No bundle carries sealup's version: each reads it at start-up from the package.json beside it
-// (spec #41 decision 34), so a release PR that bumps it changes no committed bundle. The public
-// release build gives `--release-sha`, the release commit's full SHA: it goes into the CLI
-// bundle only (init pins the workflow's sealup step to it, decision 38), never into the action's.
+// (spec #41 decision 34), so a release PR that bumps it changes no committed bundle. Nor does
+// any carry the release commit: init's workflow names sealup's step by its version tag (0043).
 //
 // The CLI bundle's first line is `#!/usr/bin/env node`, before the shims: it is the package's
 // `bin`, and npm's shims run the file itself. Without that line the shell reads it on Linux and
@@ -49,27 +48,17 @@ export interface BuildOptions {
   readonly outdir?: string;
   /** Entry file; `src/cli/bin.ts` by default (tests bundle fixtures through the same build). */
   readonly entry?: string;
-  /**
-   * The release commit's full SHA (40 lowercase hex digits): the public release build gives it,
-   * and it goes into the CLI bundle only, for init's workflow pin (spec #41 decision 38).
-   */
-  readonly releaseSha?: string;
 }
 
 /**
  * Builds the CLI bundle and its licence file, and (unless `entry` names a fixture) the action's
- * bundle; throws when a build or a licence check fails, or the release SHA is not a full SHA.
+ * bundle; throws when a build or a licence check fails.
  */
 export async function build(options: BuildOptions = {}): Promise<void> {
-  const { releaseSha } = options;
-  if (releaseSha !== undefined && !/^[0-9a-f]{40}$/.test(releaseSha)) {
-    throw new Error(`--release-sha must be a full commit SHA (40 hex digits), not "${releaseSha}"`);
-  }
   const outdir = resolve(options.outdir ?? join(repoRoot, 'dist'));
   mkdirSync(outdir, { recursive: true });
   const cli = await bundle(options.entry ?? join(repoRoot, 'src', 'cli', 'bin.ts'), {
     banner: `${shebang}\n${shims}`,
-    define: releaseSha === undefined ? {} : { SEALUP_RELEASE_SHA: JSON.stringify(releaseSha) },
   });
   writeFileSync(join(outdir, 'cli.mjs'), cli.code);
   writeFileSync(join(outdir, 'meta.json'), JSON.stringify(cli.metafile));
@@ -119,7 +108,7 @@ const savings: esbuild.Plugin = {
  */
 async function bundle(
   entry: string,
-  options: { readonly banner: string; readonly define?: Readonly<Record<string, string>> },
+  options: { readonly banner: string },
 ): Promise<{ code: string; metafile: esbuild.Metafile; licences: string }> {
   const result = await esbuild.build({
     absWorkingDir: repoRoot,
@@ -133,7 +122,6 @@ async function bundle(
     target: 'node24',
     external: ['cpu-features'],
     banner: { js: options.banner },
-    define: { ...options.define },
     plugins: [savings],
     metafile: true,
     logLevel: 'silent',
@@ -148,14 +136,9 @@ async function bundle(
 }
 
 if (import.meta.main) {
-  const { values } = parseArgs({
-    options: { outdir: { type: 'string' }, 'release-sha': { type: 'string' } },
-  });
+  const { values } = parseArgs({ options: { outdir: { type: 'string' } } });
   try {
-    await build({
-      ...(values.outdir === undefined ? {} : { outdir: values.outdir }),
-      ...(values['release-sha'] === undefined ? {} : { releaseSha: values['release-sha'] }),
-    });
+    await build(values.outdir === undefined ? {} : { outdir: values.outdir });
     const outdir = values.outdir ?? 'dist';
     console.log(`built ${outdir}/cli.mjs and ${outdir}/action.mjs`);
   } catch (error) {

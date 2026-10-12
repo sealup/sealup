@@ -27,8 +27,15 @@ _Avoid_: remote dir, web root, docroot
 The server folder that holds a target's manifest, kept outside every mapping's server folder (it may sit in the target folder beside them).
 
 **Host key**:
-The server's public key, pinned in the config; a run connects only to a server that shows it.
+The server's public key; a run connects only to a server that shows it. It is pinned in `hostKey`: the key's line in `sealup.yml`, or, in a public repository, a reference to a variable that holds it.
 _Avoid_: fingerprint (that is how a host key is printed)
+
+**Reference**:
+A value of `sealup.yml` written as `${NAME}`, read from the environment or `sealup.env` when the file is read. A password is always one; in a public repository the server and the host key (or the pinned certificate) are too. sealup never writes over a reference: the person sets the variable.
+_Avoid_: placeholder (that is the comment `init` writes where no host key is saved yet), interpolation
+
+**Public repository**:
+A repository anyone can read, `sealup.yml` included. `init` asks whether the repository is one; on a yes, the server and the host key go into `sealup.yml` as references, their values into `sealup.env` and CI secrets, and GitHub's log masks them: the repository hides its server.
 
 **Certificate**:
 An FTPS server's TLS certificate, checked before the login: by the trusted CAs and the host name, or against the SHA-256 pinned in `tlsFingerprint`.

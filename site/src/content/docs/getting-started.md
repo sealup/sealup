@@ -59,8 +59,8 @@ npx sealup init
   Settings › Secrets and variables › Actions › New repository secret
 
   Next:
-    sealup deploy -n    dry run: list every change, change nothing
-    sealup deploy       deploy to ssh.example.com
+    sealup deploy --dry-run    dry run: list every change, change nothing
+    sealup deploy              deploy to ssh.example.com
 ```
 
 The address says the protocol, the user, the host and the folder: `sftp://`, `ssh://`,
@@ -104,7 +104,7 @@ To check the file and its variables without connecting, run `sealup check`.
 A dry run shows every change and changes nothing:
 
 ```sh
-npx sealup deploy -n
+npx sealup deploy --dry-run
 ```
 
 Then deploy:
@@ -136,7 +136,7 @@ files sealup uploaded that left your build), and what stays:
 
 <!-- output: s10-dry-run -->
 ```text
-$ sealup deploy -n
+$ sealup deploy --dry-run
   DRY RUN  nothing will change on production
   production  sftp://deploy@ssh.example.com:22/home/site
   host key    SHA256:8H38JEnHSrMlcjtEnYeJa5rF1sOMfr07rcpM5uV9ftM  verified

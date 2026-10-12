@@ -142,7 +142,7 @@ describe.concurrent('workflows, proven to bite', () => {
     ],
     ['no build, in a subfolder', { fromRepoRoot: 'apps/site' }],
   ] as const)(
-    'passes the workflow init writes (%s), but for the sealup pin',
+    "passes the workflow init writes (%s), but for sealup's step by its tag (0043)",
     async (_, options) => {
       const folder = mkdtempSync(join(tmpdir(), 'sealup init workflow '));
       try {
@@ -159,12 +159,16 @@ describe.concurrent('workflows, proven to bite', () => {
     },
   );
 
-  it('passes the workflow init writes from a release build, the sealup step pinned by SHA', async () => {
+  // The SHA form the Action page gives teams whose policy asks for one (0043).
+  it("passes the workflow init writes once sealup's step is pinned by SHA", async () => {
     const folder = mkdtempSync(join(tmpdir(), 'sealup init workflow '));
     try {
       const file = join(folder, 'deploy.yml');
-      const releaseSha = '0123456789abcdef0123456789abcdef01234567';
-      writeFileSync(file, workflowText({ version: '1.2.3', releaseSha, fromRepoRoot: '' }));
+      const tag = '- uses: sealup/sealup@v1.2.3\n';
+      const text = workflowText({ version: '1.2.3', fromRepoRoot: '' });
+      expect(text).toContain(tag);
+      const sha = '0123456789abcdef0123456789abcdef01234567';
+      writeFileSync(file, text.replace(tag, `- uses: sealup/sealup@${sha} # v1.2.3\n`));
       const run = await runNode([script, file], repoRoot);
       expect(run.exitCode, run.output).toBe(0);
     } finally {

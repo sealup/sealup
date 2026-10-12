@@ -155,6 +155,7 @@ describe('loadConfig: sealup.env and --env-file (decision 0022 §7)', () => {
       ok: false,
       issues: [{ code: 'env-file-not-found', file: envFile, keyPath: '' }],
       secrets: [],
+      hidden: [],
     });
   });
 });

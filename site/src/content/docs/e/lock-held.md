@@ -34,4 +34,4 @@ If the run that held the lock died (a laptop closed, a CI job killed), you do no
 
 If the message says the lock has no note sealup can read, it names the lock folder. When you are sure no run is deploying, remove that folder on the server, then deploy again.
 
-A dry run (`sealup deploy -n`) never takes the lock: it shows a warning and its plan. `sealup pull` only reads the server and takes no lock.
+A dry run (`sealup deploy --dry-run`) never takes the lock: it shows a warning and its plan. `sealup pull` only reads the server and takes no lock.

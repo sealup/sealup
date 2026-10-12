@@ -1,5 +1,5 @@
 // The site's checks (spec sealup/sealup#41 decision 42, decision 0036), run on a build folder:
-//   missingPages  every docs slug and every sealup.dev URL in `help` has a page
+//   missingPages  every docs slug, every sealup.dev URL in `help` and in the README is served
 //
 // The CLI's own words are the source: the slugs come from the frozen docs-slugs golden, the URLs
 // from the help screens themselves (src/report/help.ts is pure: Node runs it as it is).
@@ -7,7 +7,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, join, relative, sep } from 'node:path';
-import { chromium } from 'playwright-core';
+import { type Browser, chromium, type Page } from 'playwright-core';
 import { helpLines, helpTopics } from '../../src/report/help.ts';
 
 /** The repo root (this file lives in `site/scripts/`). */
@@ -35,24 +35,32 @@ function helpText(): string {
     .join('\n');
 }
 
-/** A sealup.dev URL's path as the site serves it: `/`, `/deploy/`, `/e/login-refused/`. */
+/**
+ * A sealup.dev URL's path as the site serves it: a page as `/`, `/deploy/`, `/e/login-refused/`;
+ * a file (its last name has an extension) as it is, `/brand/sealup-wordmark.svg`.
+ */
 function pagePath(path: string): string {
+  if (/\.\w+$/.test(path)) return path;
   const trimmed = path.replace(/\/+$/, '');
   return `${trimmed}/`;
 }
 
-/** The page paths the CLI links: one per docs slug, then one per sealup.dev URL in help. */
+const sealupUrl = /https:\/\/sealup\.dev(\/[\w./-]*)?/g;
+
+/**
+ * The paths the CLI and the README link: one per sealup.dev URL in help, then one per docs slug,
+ * then one per sealup.dev URL in the README (its wordmark: GitHub and npm load it from the site).
+ */
 export function requiredPages(): string[] {
   const fromSlugs = docsSlugs().map((slug) => `/e/${slug}/`);
-  const fromHelp = [...helpText().matchAll(/https:\/\/sealup\.dev(\/[\w./-]*)?/g)].map((match) =>
-    pagePath(match[1] ?? '/'),
-  );
-  return [...new Set([...fromHelp, ...fromSlugs])];
+  const urls = (text: string) => [...text.matchAll(sealupUrl)].map((match) => pagePath(match[1] ?? '/'));
+  const fromReadme = urls(readFileSync(join(repoRoot, 'README.md'), 'utf8'));
+  return [...new Set([...urls(helpText()), ...fromSlugs, ...fromReadme])];
 }
 
-/** The required paths with no index.html in the build folder, in the order given. */
+/** The required paths the build folder does not serve, in the order given. */
 export function missingPages(dist: string, required: readonly string[]): string[] {
-  return required.filter((path) => !existsSync(join(dist, path, 'index.html')));
+  return required.filter((path) => servedFile(dist, path) === undefined);
 }
 
 const origin = 'https://sealup.dev';
@@ -176,6 +184,16 @@ async function serve(dist: string): Promise<{ readonly url: string; readonly clo
   return { url: `http://127.0.0.1:${port}`, close: () => server.close() };
 }
 
+/** The machine's Chrome (`channel: 'chrome'`), or the one at $CHROME_PATH. */
+function launchChrome(): Promise<Browser> {
+  const executablePath = process.env.CHROME_PATH;
+  return chromium.launch({
+    ...(executablePath === undefined ? { channel: 'chrome' } : { executablePath }),
+    // The pages are on 127.0.0.1: no proxy lookup (it can stall each load for seconds).
+    args: ['--no-proxy-server'],
+  });
+}
+
 /** The phone width every page must fit (I-102). */
 export const phoneWidth = 375;
 
@@ -186,12 +204,7 @@ export const phoneWidth = 375;
  */
 export async function widePages(dist: string): Promise<string[]> {
   const site = await serve(dist);
-  const executablePath = process.env.CHROME_PATH;
-  const browser = await chromium.launch({
-    ...(executablePath === undefined ? { channel: 'chrome' } : { executablePath }),
-    // The pages are on 127.0.0.1: no proxy lookup (it can stall each load for seconds).
-    args: ['--no-proxy-server'],
-  });
+  const browser = await launchChrome();
   try {
     const context = await browser.newContext({
       viewport: { width: phoneWidth, height: 812 },
@@ -210,6 +223,146 @@ export async function widePages(dist: string): Promise<string[]> {
       if (scroll > client) wide.push(`${page}: ${scroll} px wide at ${phoneWidth} px`);
     }
     return wide;
+  } finally {
+    await browser.close();
+    site.close();
+  }
+}
+
+/** The docs page the theme check opens beside the home page. */
+const docsPage = '/getting-started/';
+
+type Theme = 'light' | 'dark';
+
+/** The switch's accessible name: what a click does (src/theme/theme.ts). */
+const switchName = /^Switch to (light|dark) theme$/;
+
+/** The open page's theme switch: one visible button named for what a click does. */
+const themeSwitch = (tab: Page) =>
+  tab.getByRole('button', { name: switchName }).filter({ visible: true });
+
+/** The theme the open page shows, and its switch's name. */
+async function switchState(tab: Page): Promise<{ theme: string; name: string }> {
+  const name = (await themeSwitch(tab).first().getAttribute('aria-label')) ?? 'none';
+  const theme = await tab.evaluate(() => document.documentElement.dataset.theme ?? 'none');
+  return { theme, name };
+}
+
+const other = (theme: string): Theme => (theme === 'dark' ? 'light' : 'dark');
+
+/**
+ * The theme switch on the home page and a docs page (spec sealup/sealup-private#88 decisions 23
+ * and 25, plan 06 ruling 4), in the machine's Chrome with the system in dark and nothing stored:
+ * each page has one switch, a button named for what a click does ("Switch to light theme"); with
+ * nothing stored the page shows the system's theme; Enter and a click switch to the other theme,
+ * and the choice shows on the other page; the docs header's GitHub link takes the text colour, and
+ * the accent on hover, in both themes; the home page's header shows the GitHub icon, not a label.
+ * Each problem as `<page>: <what>`, in the order met; a page without the switch stops the check.
+ */
+export async function themeProblems(dist: string): Promise<string[]> {
+  const site = await serve(dist);
+  const browser = await launchChrome();
+  try {
+    const context = await browser.newContext({
+      viewport: { width: 1280, height: 800 },
+      colorScheme: 'dark',
+    });
+    const tab = await context.newPage();
+    const problems: string[] = [];
+    const open = async (page: string): Promise<boolean> => {
+      await tab.goto(`${site.url}${page}`, { waitUntil: 'load' });
+      if ((await themeSwitch(tab).count()) === 1) return true;
+      const wanted = '"Switch to light theme" or "Switch to dark theme"';
+      problems.push(`${page}: no theme switch (one button named ${wanted})`);
+      return false;
+    };
+    /** The open page shows `theme`, and its switch offers the other one. */
+    const shows = async (page: string, theme: Theme, from = page): Promise<void> => {
+      const state = await switchState(tab);
+      if (state.theme === theme && state.name === `Switch to ${other(theme)} theme`) return;
+      const chosen = from === page ? 'chosen' : `chosen on ${from},`;
+      const seen = `${state.theme} theme, switch named "${state.name}"`;
+      problems.push(`${page}: ${theme}, ${chosen} is not shown (${seen})`);
+    };
+    const githubColours = async (page: string): Promise<void> => {
+      const link = tab.locator('a[rel="me"][href*="github.com"]').filter({ visible: true }).first();
+      if ((await link.count()) === 0) {
+        problems.push(`${page}: no GitHub link in the header`);
+        return;
+      }
+      const colours = () =>
+        link.evaluate((element) => {
+          const probe = document.createElement('span');
+          probe.style.color = 'var(--sl-color-text-accent)';
+          document.body.append(probe);
+          const accent = getComputedStyle(probe).color;
+          probe.remove();
+          return {
+            theme: document.documentElement.dataset.theme ?? 'none',
+            link: getComputedStyle(element).color,
+            text: getComputedStyle(document.body).color,
+            accent,
+          };
+        });
+      await tab.mouse.move(0, 0);
+      const rest = await colours();
+      if (rest.link !== rest.text) {
+        problems.push(`${page}: the GitHub link is not in the text colour (${rest.theme} theme)`);
+      }
+      await link.hover();
+      const hover = await colours();
+      if (hover.link !== hover.accent) {
+        const theme = `${hover.theme} theme`;
+        problems.push(`${page}: the GitHub link is not in the accent on hover (${theme})`);
+      }
+      await tab.mouse.move(0, 0);
+    };
+    /** The home page's header links to GitHub by its icon: a name, no visible words. */
+    const githubIcon = async (page: string): Promise<void> => {
+      const link = tab
+        .locator('header a[href*="github.com"]')
+        .filter({ visible: true })
+        .first();
+      if ((await link.count()) === 0) {
+        problems.push(`${page}: no GitHub link in the header`);
+        return;
+      }
+      const words = (await link.innerText()).trim();
+      const named = await tab
+        .locator('header')
+        .getByRole('link', { name: 'GitHub', exact: true })
+        .filter({ visible: true })
+        .count();
+      if (words !== '') problems.push(`${page}: the header shows the GitHub label, not its icon`);
+      else if (named === 0) problems.push(`${page}: the header's GitHub icon has no name`);
+    };
+
+    if (!(await open('/')) || !(await open(docsPage))) return problems;
+    // Nothing stored: the system's theme (dark).
+    await shows(docsPage, 'dark');
+    // The keyboard on the docs, then the light theme's colours.
+    await themeSwitch(tab).focus();
+    await tab.keyboard.press('Enter');
+    if ((await switchState(tab)).theme !== 'light') {
+      problems.push(`${docsPage}: Enter on the switch does not switch the theme`);
+      await themeSwitch(tab).click();
+    }
+    await shows(docsPage, 'light');
+    await githubColours(docsPage);
+    // Seen on the home page; a click there, seen on the docs.
+    await open('/');
+    await githubIcon('/');
+    await shows('/', 'light', docsPage);
+    const before = (await switchState(tab)).theme;
+    await themeSwitch(tab).click();
+    const after = (await switchState(tab)).theme;
+    if (after !== other(before)) {
+      problems.push(`/: a click on the switch does not switch the theme (${after} theme)`);
+    }
+    await open(docsPage);
+    await shows(docsPage, after === 'light' ? 'light' : 'dark', '/');
+    await githubColours(docsPage);
+    return problems;
   } finally {
     await browser.close();
     site.close();

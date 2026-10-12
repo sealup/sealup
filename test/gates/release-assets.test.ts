@@ -1,6 +1,6 @@
 // The release assets (decision 0017; spec #41 decision 36): scripts/release-assets.ts makes what
 // the public release attaches and attests, from a built project: the npm tarball, the action's
-// bundle, SHA256SUMS, and the release notes with the SHA-pinned action line. The public
+// bundle, SHA256SUMS, and the release notes with the action line by its tag (0043). The public
 // release.yml and CI's release dry run both call it. Driven here on a copy of the package files
 // with stand-in bundles, so no build runs.
 
@@ -21,7 +21,6 @@ import { repoRoot } from '../../scripts/gates.ts';
 import { type GateRun, runNode } from './gate-kit.ts';
 
 const script = join(repoRoot, 'scripts', 'release-assets.ts');
-const sha = '0123456789abcdef0123456789abcdef01234567';
 
 const changelog = [
   '# Changelog',
@@ -86,8 +85,6 @@ describe('the release assets', () => {
       to,
       '--root',
       from,
-      '--sha',
-      sha,
       '--notes',
       join(temp, `${to === out ? '' : 'bad-'}notes.md`),
     ];
@@ -111,12 +108,13 @@ describe('the release assets', () => {
     );
   });
 
-  it("writes notes with this version's changelog, the pinned action line and the verify commands", () => {
+  it("writes notes with this version's changelog, the action line and the verify commands", () => {
     const text = readFileSync(notes, 'utf8');
     expect(text).toContain('* a reconnect keeps the host key check');
     expect(text).not.toContain('an older fix');
     expect(text).not.toContain('## [1.2.3]');
-    expect(text).toContain(`- uses: sealup/sealup@${sha} # v1.2.3`);
+    expect(text).toContain('```yaml\n- uses: sealup/sealup@v1.2.3\n```');
+    expect(text).not.toMatch(/sealup\/sealup@[0-9a-f]{40}/);
     expect(text).toContain('npx sealup@1.2.3 init');
     expect(text).toContain('sha256sum -c SHA256SUMS');
     expect(text).toContain('gh attestation verify sealup-1.2.3.tgz --repo sealup/sealup');
@@ -130,11 +128,12 @@ describe('the release assets', () => {
   });
 
   it.each([
-    ['a short SHA', ['--sha', 'abc123']],
-    ['no SHA', []],
-  ])('refuses %s', async (_, more) => {
-    const result = await runNode([script, join(temp, 'refused'), ...more], repoRoot);
+    ['no output folder', [], 'give one output folder'],
+    // Since 0043 the notes need no release commit: an old call with --sha is a usage error.
+    ['--sha', [join(tmpdir(), 'sealup-never-written'), '--sha', 'abc'], "Unknown option '--sha'"],
+  ])('refuses %s', async (_, more, why) => {
+    const result = await runNode([script, ...more], repoRoot);
     expect(result.exitCode, result.output).toBe(2);
-    expect(result.output).toContain('--sha must be the release commit');
+    expect(result.output).toContain(why);
   });
 });

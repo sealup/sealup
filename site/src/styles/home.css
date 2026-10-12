@@ -306,6 +306,17 @@ p {
 .nav nav a:hover {
   color: var(--ink);
 }
+/* GitHub by its icon, as on the docs. */
+.nav nav a.github {
+  display: flex;
+}
+/* The theme switch (src/components/ThemeSwitch.astro) on this page's tokens. */
+.nav {
+  --theme-switch-fg: var(--ink-2);
+  --theme-switch-hover: var(--ink);
+  --theme-switch-line: var(--line-2);
+  --theme-switch-on: var(--wax-text);
+}
 @media (max-width: 640px) {
   .nav .wrap {
     height: 56px;

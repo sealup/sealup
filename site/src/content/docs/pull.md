@@ -30,7 +30,7 @@ pull:
 
 | Flag | What it does |
 |---|---|
-| `-n`, `--dry-run` | List every file to download, change nothing |
+| `--dry-run` | List every file to download, change nothing |
 
 Global flags: `-c`, `--env-file`, `--json`, `-v`, `-q`, `--no-color` (see `sealup --help`).
 
@@ -48,7 +48,7 @@ Global flags: `-c`, `--env-file`, `--json`, `-v`, `-q`, `--no-color` (see `sealu
 ## Examples
 
 ```sh
-sealup pull -n                   # see what would come down
+sealup pull --dry-run            # see what would come down
 sealup pull production           # one of several targets
 ```
 

@@ -2,14 +2,21 @@
 //
 //   node scripts/check-site.ts [dist]     default: dist/, after `npm run build`
 //
-// 1. every docs slug and every sealup.dev URL in `help` has a page
+// 1. every docs slug, every sealup.dev URL in `help` and in the README has a page or file
 // 2. no internal link or asset leads nowhere
 // 3. no page scrolls sideways at 375 px (I-102), in the machine's Chrome or $CHROME_PATH
+// 4. the theme switch on the home page and the docs, one choice for both (spec #88, ruling 4)
 //
 // One line per finding, then one status line per check. Exit 0 when all pass, 1 otherwise.
 
 import { join } from 'node:path';
-import { brokenLinks, missingPages, requiredPages, widePages } from './site-checks.ts';
+import {
+  brokenLinks,
+  missingPages,
+  requiredPages,
+  themeProblems,
+  widePages,
+} from './site-checks.ts';
 
 const dist = join(process.cwd(), process.argv[2] ?? 'dist');
 
@@ -20,14 +27,17 @@ const broken = brokenLinks(dist);
 for (const link of broken) console.error(`broken link on ${link}`);
 const wide = await widePages(dist);
 for (const page of wide) console.error(`scrolls sideways: ${page}`);
+const theme = await themeProblems(dist);
+for (const problem of theme) console.error(`theme switch: ${problem}`);
 
 const status = (count: number, ok: string, failed: string): string =>
   count === 0 ? `  ok  ${ok}` : `  ✗   ${failed}`;
 console.error(
   [
-    status(missing.length, `${required.length} pages the CLI links`, `${missing.length} missing`),
+    status(missing.length, `${required.length} pages the CLI and the README link`, `${missing.length} missing`),
     status(broken.length, 'internal links', `${broken.length} broken link(s)`),
     status(wide.length, 'every page fits 375 px', `${wide.length} page(s) too wide`),
+    status(theme.length, 'the theme switch', `${theme.length} theme switch problem(s)`),
   ].join('\n'),
 );
-process.exitCode = missing.length + broken.length + wide.length === 0 ? 0 : 1;
+process.exitCode = missing.length + broken.length + wide.length + theme.length === 0 ? 0 : 1;

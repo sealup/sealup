@@ -9,8 +9,13 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { repoRoot } from '../../scripts/gates.ts';
 import {
   canaries,
+  createMemoryServer,
+  expectHiddenMasked,
   expectNoLeaks,
   findLeaks,
+  githubLog,
+  githubMasks,
+  hiddenCanaries,
   readTree,
   splitMasks,
 } from '../../src/testkit/index.ts';
@@ -118,6 +123,74 @@ describe("GitHub's mask lines, the one exception (R2, spec #24 decision 30)", ()
       form: 'base64',
       canary: 'SEALUP_CANARY_PASSWORD',
     });
+  });
+});
+
+describe('a public repo’s hidden server and host key (decision 0045), proven to bite', () => {
+  const { SEALUP_CANARY_SERVER: server, SEALUP_CANARY_HOST_KEY: key } = hiddenCanaries;
+  const host = new URL(server).hostname;
+  const target = `  production  sftp://cn4ry-user@${host}:22/home/site`;
+
+  it('passes a GitHub-form log whose masks, registered first, cover them', () => {
+    const log = [
+      `::add-mask::${server}`,
+      '::add-mask::cn4ry-user',
+      `::add-mask::${host}`,
+      `::add-mask::${key}`,
+      'sealup 0.1.0 · deploy',
+      target,
+    ].join('\n');
+    const shown = githubMasks(log)(splitMasks(log).rest);
+    expect(shown).toContain('  production  sftp://***@***:22/home/site');
+    expect(() => expectHiddenMasked({ stderr: shown })).not.toThrow();
+  });
+
+  it('names the part a mask misses, and never its value', () => {
+    const log = [`::add-mask::${host}`, 'sealup 0.1.0 · deploy', target].join('\n');
+    let message = '';
+    try {
+      expectHiddenMasked({ stderr: githubMasks(log)(splitMasks(log).rest) });
+    } catch (error) {
+      message = String(error);
+    }
+    expect(message).toContain('SEALUP_CANARY_SERVER (user) unmasked in stderr as raw');
+    expect(message).not.toContain('cn4ry-user');
+  });
+
+  it('reads back GitHub’s escapes', () => {
+    expect(githubMasks('::add-mask::50%25 off\nx')('50% off')).toBe('***');
+  });
+
+  // A key the server shows is learnt after the log starts (0045): its mask comes later.
+  it('hides a later mask line’s value from the lines after it only, line by line', () => {
+    const before = `  received  ${host}`;
+    const log = ['sealup 0.1.0 · deploy', before, `::add-mask::${host}`, target].join('\n');
+    expect(githubLog(log)).toBe(
+      ['sealup 0.1.0 · deploy', before, '  production  sftp://cn4ry-user@***:22/home/site'].join(
+        '\n',
+      ),
+    );
+    expect(() => expectHiddenMasked({ stderr: githubLog(log) })).toThrow(
+      'SEALUP_CANARY_SERVER (host) unmasked in stderr',
+    );
+  });
+
+  it('checks the values a test adds as it checks the canaries', () => {
+    expect(() =>
+      expectHiddenMasked(
+        { summary: '| Host key received | SHA256:abcdef |' },
+        {
+          'the server’s key (fingerprint)': 'SHA256:abcdef',
+        },
+      ),
+    ).toThrow('the server’s key (fingerprint) unmasked in summary as raw');
+  });
+
+  it('finds the fingerprint of the key, and anything in the job summary', () => {
+    const fingerprint = createMemoryServer({ hostKeyLine: key }).fingerprint;
+    expect(() => expectHiddenMasked({ summary: `| Host key | ${fingerprint} |` })).toThrow(
+      'SEALUP_CANARY_HOST_KEY (fingerprint) unmasked in summary',
+    );
   });
 });
 

@@ -21,7 +21,9 @@
 //               certificate scan port (ScanCertificate, CertificateScan; FTPS)
 //   config.ts   the SFTP Target (ServerUrl, HostKey, Mapping, SecretFile, PullEntry,
 //               AllowedRisk, its config places), ConfigPlace, ConfigIssue and ConfigExpected,
-//               VariableSource, maxFtpConnections (FTP's cap on parallel), isFtp(protocol)
+//               VariableSource, FromVariables (the parts read from a variable, 0045),
+//               revealingValues(part) (what GitHub's form masks of a part that hides a server),
+//               maxFtpConnections (FTP's cap on parallel), isFtp(protocol)
 //   plan.ts     LocalFile and LocalTree, Manifest (format 2), FileRecord, ManifestRead,
 //               EmptySource, PlanInput, WriteRead, ServerCheck and ListedFile (the server
 //               check), MirrorListing (the full mirror), PlanOp (mkdir, upload, write,
@@ -53,11 +55,13 @@ export {
   type ConfigExpected,
   type ConfigIssue,
   type ConfigPlace,
+  type FromVariables,
   type HostKey,
   isFtp,
   type Mapping,
   maxFtpConnections,
   type PullEntry,
+  revealingValues,
   type SecretFile,
   type ServerUrl,
   type Target,

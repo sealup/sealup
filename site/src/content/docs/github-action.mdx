@@ -1,6 +1,6 @@
 ---
 title: The GitHub Action
-description: Deploy from GitHub Actions with the sealup action, pinned to a release's commit.
+description: Deploy from GitHub Actions with the sealup action, pinned to a release's version.
 ---
 
 import { Code } from '@astrojs/starlight/components';
@@ -9,17 +9,33 @@ import release from '../../generated/release.json';
 The sealup action runs the same code as the CLI, in the same process, from the bundle in the
 release: nothing is downloaded when the job runs. Add it after your build step:
 
-<Code code={release.step} lang="yaml" title=".github/workflows/deploy.yml" />
+<Code code={release.stepWithId} lang="yaml" title=".github/workflows/deploy.yml" />
 
 `sealup init` writes a whole workflow around this step (see [Getting started](/getting-started/)):
 on every push to `main`, it checks out the code, builds the site, and deploys it.
 
-## Pin it to a commit
+## Pin it to a version
 
-The step above names the release's full commit SHA, with its tag in a comment. A tag can be
-moved to other code; a commit cannot. Every other step of `init`'s workflow is pinned the same
-way. Each release's notes on GitHub give the line for that release, and `sealup init` writes the
-one for the version you run. Dependabot updates such pins, comment included.
+The step above names a release by its full version. sealup's GitHub releases are immutable: once
+a release is out, its tag cannot be moved or deleted while the release exists, and its name can
+never be used again. So `@v0.x.y` runs the code released as v0.x.y, or nothing at all. `sealup init` writes the
+step for the version you run, each release's notes on GitHub give the line for that release, and
+Dependabot updates it like any other action.
+
+The step needs that version. Without an `@`, GitHub refuses the step. `@main` runs whatever is on
+`main` that day: code not yet released, which can change between two runs. sealup has no moving
+tag such as `@v0`.
+
+The other steps of `init`'s workflow, `actions/checkout` and `actions/setup-node`, stay pinned to
+a full commit SHA with their version in a comment: nothing locks their tags.
+
+If your policy asks for every action pinned to a commit (zizmor, or OpenSSF Scorecard's pinned
+dependencies check), use the release's commit, shown on its release page, with the version in a
+comment. It runs the same code as the tag:
+
+```yaml
+- uses: sealup/sealup@<commit SHA> # v0.x.y
+```
 
 ## Secrets
 
@@ -28,8 +44,11 @@ Secrets go to the step through `env:`, never through `with:`: `sealup.yml` reads
 Actions**, or in a GitHub environment to keep production's apart. Before its first line of
 output, sealup asks GitHub to mask each secret (each line of a key), and it never prints them.
 
-The server and the host key can be `${NAME}` references too. Then a changed `sealup.yml` in a
-pull request cannot send your password to another server.
+In a public repository, the server and the host key can be secrets too, and are masked in the
+log like one: `sealup init` offers it (see [A public repository](/security/#a-public-repository)).
+That hides them from strangers. It does not stop someone who can push from pointing
+`sealup.yml` at another server in the same change: keep the password in an environment that
+only `main` may use, and require review on `main`.
 
 ## Inputs
 
@@ -59,7 +78,7 @@ Name the target with `with:`. A staging deploy on every push and production on a
 example, are two jobs, each with its own environment and secrets:
 
 ```yaml
-- uses: sealup/sealup@<commit SHA> # vX.Y.Z
+- uses: sealup/sealup@v0.x.y
   id: sealup
   with:
     target: staging

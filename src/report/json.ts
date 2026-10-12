@@ -47,7 +47,7 @@ interface JsonOptions {
   readonly version: string;
   /** The command run (`deploy`), or null when there was none. */
   readonly command: string | null;
-  /** Whether `-n` was given: what `dryRun` says when the run stops before choosing a target. */
+  /** Whether `--dry-run` was given: what `dryRun` says when the run stops before choosing a target. */
   readonly dryRun: boolean;
 }
 

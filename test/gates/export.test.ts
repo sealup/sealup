@@ -79,6 +79,15 @@ describe('the export, proven to bite', () => {
     for (const path of ['docs', 'spikes', 'tools', 'AGENTS.md', '.claude']) {
       expect(existsSync(join(out, path)), path).toBe(false);
     }
+    // The README as GitHub and npm show it: the wordmark and the badges, by absolute URLs
+    // (spec #88 decision 29).
+    const readme = readFileSync(join(out, 'README.md'), 'utf8');
+    expect(readme).toBe(readFileSync(join(repoRoot, 'README.md'), 'utf8'));
+    expect(readme).toContain('<img src="https://sealup.dev/brand/sealup-wordmark.svg"');
+    expect(readme).toContain('srcset="https://sealup.dev/brand/sealup-wordmark-on-dark.svg"');
+    expect(readme).toContain(
+      '<img src="https://github.com/sealup/sealup/actions/workflows/ci.yml/badge.svg"',
+    );
   });
 
   it('fails a release with no names list, and writes nothing', async () => {

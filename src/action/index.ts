@@ -4,7 +4,7 @@
 // delimiter form in the file GITHUB_OUTPUT names), where the plan file goes (RUNNER_TEMP).
 //
 // Interface: runAction(env, io) returns sealup's exit code. It maps the inputs to
-// `deploy [target] [-n] [-c <config>]` and runs cli's main() in the same process, in
+// `deploy [target] [--dry-run] [-c <config>]` and runs cli's main() in the same process, in
 // `working-directory`, which must be inside GITHUB_WORKSPACE (else exit 2). `bin.ts` is the
 // action bundle's entry (`dist/action.mjs`): it wires the real process and transport.
 //
@@ -71,7 +71,7 @@ export async function runAction(env: Env, io: ActionIo): Promise<number> {
   const argv = [
     'deploy',
     ...(target === '' ? [] : [target]),
-    ...(dryRun === true ? ['-n'] : []),
+    ...(dryRun === true ? ['--dry-run'] : []),
     ...(config === '' ? [] : ['-c', config]),
   ];
   const refuse: Problem | undefined =

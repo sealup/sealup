@@ -10,7 +10,9 @@ import {
   canaries,
   createFtpServer,
   type FtpServer,
+  githubLog,
   screenOf,
+  splitMasks,
   testCertificates,
   testServerKey,
 } from '../../src/testkit/index.ts';
@@ -107,6 +109,43 @@ describe('deploy over ftps:// with tlsFingerprint', () => {
       ].join('\n'),
     );
     expect(sentUser(server)).toBe(false);
+  });
+
+  // Decision 0045: a pin read from a variable hides the certificate the server shows too, in
+  // the log (masked before the line that shows it) and in the job summary (never relying on
+  // GitHub masking it). runMain checks both, line by line.
+  it('masks the refused certificate in GitHub’s form when the pin is read from a variable', async () => {
+    const server = await ftpsServer();
+    const { root } = createProject(ftpsConfig(ref('SEALUP_TLS_FINGERPRINT')), {
+      'public_html/index.html': 'x',
+    });
+    const run = await runMain(['deploy', 'production'], {
+      cwd: root,
+      connect: dialing(server),
+      env: { ...inGitHub, SEALUP_TLS_FINGERPRINT: trusted.sha256 },
+      hidden: { 'the received certificate (SHA-256)': selfSigned.sha256 },
+    });
+    expect(run.exitCode).toBe(4);
+    expect(githubLog(run.stderr)).toContain('      received  SHA-256 ***\n');
+    expect(run.summary).toContain(
+      `| Certificate | \`CN=sealup test FTP server\` SHA-256 \`***\` **refused** |`,
+    );
+    // The pin is in a variable: the advice names it, never "commit sealup.yml" (0045 point 7).
+    expect(githubLog(run.stderr)).toContain(
+      [
+        "    Ask your host for the certificate's SHA-256. If it is the received one,",
+        '    set SEALUP_TLS_FINGERPRINT to the new SHA-256 in sealup.env and in CI;',
+        '    on your machine,  sealup keyscan production   prints it.',
+        '',
+      ].join('\n'),
+    );
+    expect(run.stderr).toContain(
+      'Ask your host, then set SEALUP_TLS_FINGERPRINT to the new SHA-256 in sealup.env and in CI (sealup keyscan production prints it).',
+    );
+    expect(run.summary).toContain(
+      "**Fix:** ask your host for the certificate's SHA-256. If it is the received one, set `SEALUP_TLS_FINGERPRINT` to the new SHA-256 in `sealup.env` and in CI: on your machine, `sealup keyscan production` prints it ([more](https://sealup.dev/e/key-in-variable)).",
+    );
+    expect(run.stderr).not.toContain('commit sealup.yml');
   });
 });
 
@@ -280,6 +319,27 @@ describe('keyscan on ftps:// (spec #41 decision 12)', () => {
     expect(deployed.exitCode, deployed.stderr).toBe(0);
   });
 
+  // Decision 0045: a pin read from a variable hides the certificate the server shows too.
+  it('masks the certificate it shows in GitHub’s form when the pin is read from a variable', async () => {
+    const server = await ftpsServer();
+    const other = selfSigned.sha256.replace(/^[0-9A-F]{2}/, '00');
+    const { root } = createProject(ftpsConfig(ref('SEALUP_TLS_FINGERPRINT')), {
+      'public_html/index.html': 'x',
+    });
+    const run = await runMain(['keyscan', 'production'], {
+      cwd: root,
+      env: { ...inGitHub, SEALUP_TLS_FINGERPRINT: other },
+      scanCertificate: scanAt(server),
+    });
+    expect(run.exitCode).toBe(4);
+    const { masks, rest } = splitMasks(run.stderr);
+    expect(masks.split('\n')).toEqual(
+      expect.arrayContaining([`::add-mask::${other}`, `::add-mask::${selfSigned.sha256}`]),
+    );
+    expect(rest.split('\n')[0]).toBe(versionLine('keyscan', 'production'));
+    expect(rest).toContain(selfSigned.sha256);
+  });
+
   it('says the pin is already there, exit 0', async () => {
     const server = await ftpsServer();
     const { root } = createProject(ftpsConfig(selfSigned.sha256), {
@@ -354,6 +414,88 @@ describe('keyscan on ftps:// (spec #41 decision 12)', () => {
         check: 'untrusted',
         state: 'not-saved',
       },
+    });
+  });
+
+  // Plan 06 spec #88 decision 8: a pin read from a `${NAME}` is never written over.
+  describe('a tlsFingerprint read from a variable', () => {
+    const config = ftpsConfig(ref('SEALUP_TLS_FINGERPRINT'));
+
+    it.each([
+      ['without a terminal', false],
+      ['on a terminal, asking nothing', true],
+    ])(
+      'another certificate, %s: the value and the variable, exit 4, sealup.yml byte for byte',
+      async (_, tty) => {
+        const server = await ftpsServer();
+        const { root, config: file } = createProject(config, { 'public_html/index.html': 'x' });
+        const run = await runMain(['keyscan', 'production', '--no-color'], {
+          cwd: root,
+          tty,
+          env: { SEALUP_TLS_FINGERPRINT: trusted.sha256 },
+          scanCertificate: scanAt(server),
+        });
+        expect(run.exitCode).toBe(4);
+        expect(screenOf(run.stderr)).toContain(
+          [
+            "  ✗ The server's TLS certificate changed. sealup.yml was not changed.",
+            '    sealup.yml (line 6) pins one certificate; ftp.example.com showed another:',
+            `      expected  SHA-256 ${trusted.sha256}`,
+            `      received  SHA-256 ${selfSigned.sha256}`,
+            '    Either your host renewed or replaced its certificate, or someone between',
+            '    you and the server is intercepting the connection.',
+            '    sealup.yml reads tlsFingerprint from a variable, which sealup never writes.',
+            "    Ask your host for the certificate's SHA-256. If it is the received one,",
+            '    set SEALUP_TLS_FINGERPRINT to this value in sealup.env and in CI:',
+            `      ${selfSigned.sha256}`,
+            '',
+            '    Nothing was changed.',
+            '    More: sealup.dev/e/key-in-variable',
+          ].join('\n'),
+        );
+        expect(screenOf(run.stderr)).not.toContain('[y/N]');
+        expect(readFileSync(file, 'utf8')).toBe(config);
+        expect(sentUser(server)).toBe(false);
+      },
+    );
+
+    it('the variable not set: shows the certificate, the value and the variable to set, exit 0', async () => {
+      const server = await ftpsServer();
+      const { root, config: file } = createProject(config, { 'public_html/index.html': 'x' });
+      const run = await runMain(['keyscan', 'production'], {
+        cwd: root,
+        scanCertificate: scanAt(server),
+      });
+      expect(run.stderr).toBe(
+        [
+          ...block('not pinned'),
+          '  It is signed by no known authority (self-signed), or it is out of date.',
+          '  Nothing was saved: sealup.yml reads tlsFingerprint from a variable, which',
+          "  sealup never writes. Compare the SHA-256 with your host's, then set",
+          '  SEALUP_TLS_FINGERPRINT to this value in sealup.env and in CI:',
+          '',
+          `  ${selfSigned.sha256}`,
+          '',
+          '  More: sealup.dev/e/key-in-variable',
+          '',
+        ].join('\n'),
+      );
+      expect(run.exitCode).toBe(0);
+      expect(readFileSync(file, 'utf8')).toBe(config);
+    });
+
+    it('the same certificate: already pinned, naming the variable that holds it', async () => {
+      const server = await ftpsServer();
+      const { root } = createProject(config, { 'public_html/index.html': 'x' });
+      const run = await runMain(['keyscan', 'production'], {
+        cwd: root,
+        env: { SEALUP_TLS_FINGERPRINT: selfSigned.sha256 },
+        scanCertificate: scanAt(server),
+      });
+      expect(run.stderr).toContain(
+        '  ✓ Already pinned: SEALUP_TLS_FINGERPRINT holds this certificate (tlsFingerprint, line 6).',
+      );
+      expect(run.exitCode).toBe(0);
     });
   });
 

@@ -100,7 +100,7 @@ describe('convertSamSync: S03', () => {
 
   it('puts the saved host key in place of the placeholder', () => {
     const key = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIH4R/D1Ip9CHKXPz6VH9sxNwStOVJkTzt9xIQzLywt86';
-    const text = convertedConfigText(convert(deployment), key);
+    const text = convertedConfigText(convert(deployment), { hostKey: key });
     expect(text.split('\n')[2]).toBe(`hostKey: ${key}`);
   });
 });

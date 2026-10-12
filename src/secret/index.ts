@@ -122,10 +122,20 @@ export function redact(text: string): string {
 /**
  * The value of each Secret and each of its derived forms, once each, in order: what GitHub's
  * `::add-mask::` lines register before anything else is printed (R2). Only report may call this
- * (import rule forms-only-report): its mask lines are the one place a secret is written.
+ * (import rule forms-only-report): its mask lines are the one place a secret is written. Then
+ * the `hidden` values (decision 0045: a server or host key read from a variable), masked like a
+ * secret in GitHub's form but never redacted, so a terminal shows them; one under
+ * `shortestSecret` characters is masked as it is only, as its encodings would hide too much.
  */
-export function secretForms(secrets: readonly Secret[]): string[] {
-  return [...new Set(secrets.flatMap((secret) => allForms(heldValue(secret))))];
+export function secretForms(secrets: readonly Secret[], hidden: readonly string[] = []): string[] {
+  return [
+    ...new Set([
+      ...secrets.flatMap((secret) => allForms(heldValue(secret))),
+      ...hidden.flatMap((value) =>
+        [...value].length < shortestSecret ? [value] : derivedForms(value),
+      ),
+    ]),
+  ];
 }
 
 /** The forms of a value, then those of each of its lines of 6 characters or more. */

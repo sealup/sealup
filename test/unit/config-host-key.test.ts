@@ -8,7 +8,9 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   hostKeyPlaceholder,
+  keyVariable,
   loadConfig,
+  readKeyVariable,
   saveHostKey,
   saveTlsFingerprint,
   withHostKey,
@@ -282,5 +284,91 @@ describe('withTlsFingerprint and saveTlsFingerprint', () => {
     });
     const loaded = await loadConfig(file, { P: 'pw-1234' });
     expect(targetOf(loaded, 'ftp.example.com').tlsFingerprint).toBe(sha256);
+  });
+});
+
+// Plan 06 spec #88 decision 8 (decision 0045 point 7): a key or pin read from a `${NAME}` is the
+// person's to update, in sealup.env and in CI; no save ever writes over it.
+describe('a hostKey or tlsFingerprint read from a variable', () => {
+  const sha256 =
+    'FE:F7:2D:37:AE:E6:22:4C:86:16:C1:E5:80:EC:21:04:16:85:E7:97:78:0C:8E:B4:25:B4:56:E4:98:D1:75:10';
+  const shorthand = lines(
+    'server: sftp://deploy@ssh.example.com/home/site/www',
+    `hostKey: ${ref('SEALUP_HOST_KEY')}   # in sealup.env and in CI`,
+    `password: ${ref('SEALUP_PASSWORD')}`,
+    '',
+  );
+  const named = lines(
+    'targets:',
+    '  production:',
+    `    server: ${ref('SEALUP_SERVER')}`,
+    `    hostKey: ${ref('SEALUP_HOST_KEY:?set it in sealup.env')}`,
+    `    password: ${ref('SEALUP_PASSWORD')}`,
+    '  legacy:',
+    '    server: ftps://deploy@ftp.example.com/www',
+    `    tlsFingerprint: ${ref('SEALUP_TLS_FINGERPRINT')}`,
+    `    password: ${ref('FTP_PASSWORD')}`,
+    '  staging:',
+    '    server: sftp://deploy@203.0.113.10/srv',
+    `    hostKey: ${other}`,
+    `    password: ${ref('STAGING_PASSWORD')}`,
+    '',
+  );
+
+  it('names the variable, on the shorthand and on named targets', () => {
+    expect(keyVariable(shorthand, 'ssh.example.com', 'hostKey')).toBe('SEALUP_HOST_KEY');
+    expect(keyVariable(named, 'production', 'hostKey')).toBe('SEALUP_HOST_KEY');
+    expect(keyVariable(named, 'legacy', 'tlsFingerprint')).toBe('SEALUP_TLS_FINGERPRINT');
+  });
+
+  it('names none for a literal, a missing key, `$$`, or a target not in the file', () => {
+    expect(keyVariable(named, 'staging', 'hostKey')).toBeUndefined();
+    expect(keyVariable(named, 'legacy', 'hostKey')).toBeUndefined();
+    expect(keyVariable(named, 'preview', 'hostKey')).toBeUndefined();
+    expect(keyVariable('server: sftp://h/x\nhostKey: a$${B}\n', 'h', 'hostKey')).toBeUndefined();
+    expect(keyVariable('server: [', 'h', 'hostKey')).toBeUndefined();
+  });
+
+  it('names a variable read inside a longer value too: that value is never replaced either', () => {
+    const text = `server: sftp://h/x\nhostKey: ssh-ed25519 ${ref('KEY_BLOB')}\n`;
+    expect(keyVariable(text, 'h', 'hostKey')).toBe('KEY_BLOB');
+    expect(withHostKey(text, 'h', key)).toEqual({ ok: false, variable: 'KEY_BLOB' });
+  });
+
+  it('withHostKey and withTlsFingerprint refuse to write over it, naming the variable', () => {
+    expect(withHostKey(shorthand, 'ssh.example.com', key)).toEqual({
+      ok: false,
+      variable: 'SEALUP_HOST_KEY',
+    });
+    expect(withHostKey(named, 'production', key)).toEqual({
+      ok: false,
+      variable: 'SEALUP_HOST_KEY',
+    });
+    expect(withTlsFingerprint(named, 'legacy', sha256)).toEqual({
+      ok: false,
+      variable: 'SEALUP_TLS_FINGERPRINT',
+    });
+  });
+
+  it("still replaces another target's literal key in the same file", () => {
+    const edit = withHostKey(named, 'staging', key);
+    expect(edit).toMatchObject({ ok: true, line: 12 });
+    expect(edit.ok && edit.text).toBe(named.replace(`hostKey: ${other}`, `hostKey: ${key}`));
+  });
+
+  it('saveHostKey and saveTlsFingerprint leave the file byte for byte, naming the variable', async () => {
+    const folder = tempFolder();
+    const file = join(folder, 'sealup.yml');
+    writeFileSync(file, named);
+    expect(await saveHostKey(file, 'production', key)).toEqual({
+      ok: false,
+      variable: 'SEALUP_HOST_KEY',
+    });
+    expect(await saveTlsFingerprint(file, 'legacy', sha256)).toEqual({
+      ok: false,
+      variable: 'SEALUP_TLS_FINGERPRINT',
+    });
+    expect(readFileSync(file, 'utf8')).toBe(named);
+    expect(await readKeyVariable(file, 'production', 'hostKey')).toBe('SEALUP_HOST_KEY');
   });
 });

@@ -3,18 +3,29 @@
 //
 // On a terminal (stdin and stderr both): what was found, the upload folder when none was, the
 // server address (unless --server), the host key shown as keyscan shows it and saved on a yes,
-// then the password, hidden, into sealup.env. Without a terminal it needs --server, never
-// connects, never trusts a key (the placeholder comment instead) and writes no sealup.env.
+// whether the repository is public (0045: on a yes the server and the host key go to sealup.env
+// and the workflow's secrets, sealup.yml naming them), then the password, hidden, into
+// sealup.env. Without a terminal it needs --server, never connects, never trusts a key (the
+// placeholder comment instead) and writes no sealup.env.
 // Esc or Ctrl-C at a question: exit 130, nothing written. Files are written only at the end.
 //
 // The sam-sync conversion (#37, S03, spec #24 decision 22; undocumented): after the
 // existing-config check, a `.deployment.json` on a terminal is offered for conversion (a no goes
 // on with S02's questions); `--from <file>` converts without asking, and without a terminal too.
-// The converted sealup.yml takes the host-key step below (the placeholder without a terminal);
-// the password and each file written from a secret go to sealup.env. Nothing is deleted.
+// The converted sealup.yml takes the host-key step below (the placeholder without a terminal) and
+// the public question; the password and each file written from a secret go to sealup.env.
+// Nothing is deleted.
 
 import { join, relative, sep } from 'node:path';
-import { envSecret, newConfigText, parseServerUrl, passwordVariable } from '../config/index.ts';
+import {
+  type EnvValue,
+  envSecret,
+  hostKeyVariable,
+  newConfigText,
+  parseServerUrl,
+  passwordVariable,
+  serverVariable,
+} from '../config/index.ts';
 import {
   ExitCode,
   isFtp,
@@ -42,6 +53,7 @@ import {
   printInit,
   printInitJson,
   printKeyscan,
+  publicQuestion,
 } from '../report/index.ts';
 import { createPrompts, type Keyboard, type Prompts } from './prompts.ts';
 
@@ -59,8 +71,6 @@ export interface InitContext {
   readonly out: Out;
   readonly form: Form;
   readonly version: string;
-  /** The release commit's SHA, when the bundle carries it: the workflow's sealup pin. */
-  readonly releaseSha: string | undefined;
   /** `--server`, as typed. */
   readonly server: string | undefined;
   /** `--from`, as typed: a sam-sync config to convert (undocumented). */
@@ -170,26 +180,33 @@ export async function initCommand(context: InitContext): Promise<number> {
 
   let hostKey: string | undefined;
   let password: Secret | undefined;
+  let publicRepo = false;
   if (terminal) {
     out.write('\n');
     const key = await askHostKey(context, server.url, asking);
     if (typeof key === 'number') return key;
     hostKey = key.line;
+    const answer = await askPublic(context, hostKey !== undefined, asking);
+    if (typeof answer === 'number') return answer;
+    publicRepo = answer;
     const typed = await askPassword(context, project, server.url, asking);
     if (typeof typed === 'number') return typed;
     password = typed.password;
   }
 
+  const values = publicRepo ? publicRepoValues(server.text, hostKey) : [];
+  const variables = [passwordVariable, ...values.map((value) => value.envName)];
   const written = await writeProject({
     project,
     config: newConfigText({
       server: server.text,
       upload,
       ...(hostKey === undefined ? {} : { hostKey }),
+      ...(publicRepo ? { publicRepo } : {}),
     }),
-    env: password === undefined ? [] : [password],
+    env: [...(password === undefined ? [] : [password]), ...values],
     version: context.version,
-    releaseSha: context.releaseSha,
+    ...(publicRepo ? { variables } : {}),
   });
   if ('problem' in written) return stop(written.problem);
   return done(context, written.files, {
@@ -200,6 +217,7 @@ export async function initCommand(context: InitContext): Promise<number> {
     hostKey: noHostKey(server.url) ? 'none' : hostKey !== undefined,
     host: server.url.host,
     terminal,
+    ...(publicRepo ? { secrets: variables, public: true } : {}),
   });
 }
 
@@ -274,6 +292,7 @@ async function convert(
   });
 
   let hostKey: string | undefined;
+  let publicRepo = false;
   if (terminal) {
     out.write('\n');
     // sam-sync never checked the server's key; FTP and FTPS have none to check.
@@ -284,6 +303,9 @@ async function convert(
     const key = await askHostKey(context, server.url, asking);
     if (typeof key === 'number') return key;
     hostKey = key.line;
+    const answer = await askPublic(context, hostKey !== undefined, asking);
+    if (typeof answer === 'number') return answer;
+    publicRepo = answer;
     if (passwordAsked) {
       const typed = await askPassword(context, project, server.url, asking);
       if (typeof typed === 'number') return typed;
@@ -291,13 +313,20 @@ async function convert(
     }
   }
 
-  const variables = [passwordVariable, ...conversion.write.map(({ variable }) => variable)];
+  const values = publicRepo ? publicRepoValues(server.text, hostKey) : [];
+  const variables = [
+    passwordVariable,
+    ...conversion.write.map(({ variable }) => variable),
+    ...values.map((value) => value.envName),
+  ];
   const written = await writeProject({
     project,
-    config: convertedConfigText(conversion, hostKey),
-    env,
+    config: convertedConfigText(conversion, {
+      ...(hostKey === undefined ? {} : { hostKey }),
+      publicRepo,
+    }),
+    env: [...env, ...values],
     version: context.version,
-    releaseSha: context.releaseSha,
     variables,
   });
   if ('problem' in written) return stop(written.problem);
@@ -310,6 +339,7 @@ async function convert(
     host: server.url.host,
     terminal,
     secrets: variables,
+    ...(publicRepo ? { public: true } : {}),
     samSync: {
       files: samSync.files,
       scripts: samSync.scripts,
@@ -373,6 +403,28 @@ async function askHostKey(
   const yes = await ask().yesNo('  Save it to sealup.yml as hostKey?', false);
   if (yes === undefined) return cancelled();
   return { line: yes ? report.shown.line : undefined };
+}
+
+/**
+ * Whether the repository is public (0045), default no: the answer, or the exit code of a
+ * cancelled question. `hostKey`: one was saved, so a yes keeps it out of sealup.yml too.
+ */
+async function askPublic(
+  context: InitContext,
+  hostKey: boolean,
+  { ask, cancelled }: Asking,
+): Promise<boolean | number> {
+  printInit(context.out, context.form, { kind: 'public-intro', hostKey });
+  const yes = await ask().yesNo(publicQuestion, false);
+  return yes ?? cancelled();
+}
+
+/** A public repository's values for sealup.env (0045): the server, and the host key if saved. */
+function publicRepoValues(server: string, hostKey: string | undefined): EnvValue[] {
+  return [
+    { envName: serverVariable, value: server },
+    ...(hostKey === undefined ? [] : [{ envName: hostKeyVariable, value: hostKey }]),
+  ];
 }
 
 /**

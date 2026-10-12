@@ -55,7 +55,7 @@ Paste the whole key file, `BEGIN` and `END` lines included, into a repository or
 secret, and pass it to the sealup step under `env:`:
 
 ```yaml
-- uses: sealup/sealup@<commit SHA> # vX.Y.Z
+- uses: sealup/sealup@v0.x.y
   env:
     DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
 ```

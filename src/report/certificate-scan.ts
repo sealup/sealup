@@ -8,6 +8,7 @@ import type { CertificateReport, Problem } from '../contracts/index.ts';
 import { certificateLines, fileName, type Line, style } from './format.ts';
 import type { Explained } from './problems.ts';
 import { certificateFacts } from './tls-words.ts';
+import { keyInVariable, setVariableLines } from './variable-words.ts';
 
 /** One step of an `ftps://` keyscan's output, after the target line, in the order cli prints. */
 export type CertificateStep =
@@ -22,6 +23,11 @@ export type CertificateStep =
       readonly asking: boolean;
       readonly where: 'github' | 'log';
       readonly again: readonly string[];
+      /**
+       * The variable `tlsFingerprint` reads (`${NAME}`): nothing is asked or saved, and a pin not
+       * saved is shown with the variable to set (plan 06 spec #88 decision 8).
+       */
+      readonly variable?: string;
     }
   /** The pin now in the file, on `line`. */
   | {
@@ -103,8 +109,9 @@ function foundTail(
   file: string,
   command: string,
 ): Line[] {
-  const { report, asking, where } = step;
+  const { report, asking, where, variable } = step;
   const facts = certificateFacts(report.shown.certificate).map((text): Line => [`  ${text}`]);
+  if (variable !== undefined) return [...facts, [], ...inVariableLines(report, variable)];
   switch (report.state) {
     case 'trusted':
       return [
@@ -175,6 +182,45 @@ function foundTail(
   }
 }
 
+/**
+ * After the facts, for a tlsFingerprint read from `variable`: trusted or already pinned, the
+ * value and the variable to set, or (another certificate) nothing: the problem follows.
+ */
+function inVariableLines(report: CertificateReport, variable: string): Line[] {
+  const file = fileName(report.configFile);
+  switch (report.state) {
+    case 'trusted':
+      return [
+        [
+          '  ',
+          style('✓ Trusted:', 'boldGreen'),
+          ` a known authority signs it for ${report.server.host}. Nothing to pin.`,
+        ],
+      ];
+    case 'same':
+      return [
+        [
+          '  ',
+          style('✓ Already pinned:', 'boldGreen'),
+          ` ${variable} holds this certificate (tlsFingerprint${lineOf(report.saved?.place.line)}).`,
+        ],
+      ];
+    case 'not-saved':
+      return [
+        [`  ${failure(report)}`],
+        [`  Nothing was saved: ${file} reads tlsFingerprint from a variable, which`],
+        ["  sealup never writes. Compare the SHA-256 with your host's, then set"],
+        [`  ${variable} to this value in sealup.env and in CI:`],
+        [],
+        [`  ${report.shown.certificate.sha256}`],
+        [],
+        ['  ', style(`More: sealup.dev/e/${keyInVariable}`, 'dim')],
+      ];
+    case 'other':
+      return [];
+  }
+}
+
 /** The line to paste into sealup.yml. */
 function pasteLine(report: CertificateReport): Line {
   return [`  tlsFingerprint: ${report.shown.certificate.sha256}`];
@@ -223,6 +269,23 @@ export function explainPinNotReplaced(
 ): Explained {
   const file = fileName(problem.configFile);
   const command = `sealup keyscan ${problem.target}`;
+  const facts: PinFacts = {
+    host: problem.server.host,
+    expected: problem.expected,
+    line: problem.place.line,
+    received: problem.received.sha256,
+  };
+  if (problem.variable !== undefined) {
+    return {
+      title: `The server's TLS certificate changed. ${file} was not changed.`,
+      details: [
+        ...changedLines(facts, file),
+        ...setVariableLines('tlsFingerprint', file, problem.variable, problem.received.sha256),
+      ],
+      state: ['Nothing was changed.'],
+      slug: keyInVariable,
+    };
+  }
   if (problem.asked) {
     return {
       title: `The pinned certificate was kept: ${file} was not changed.`,
@@ -234,12 +297,6 @@ export function explainPinNotReplaced(
       slug: 'certificate-refused',
     };
   }
-  const facts: PinFacts = {
-    host: problem.server.host,
-    expected: problem.expected,
-    line: problem.place.line,
-    received: problem.received.sha256,
-  };
   return {
     title: `The server's TLS certificate changed. ${file} was not changed.`,
     details: [

@@ -29,6 +29,24 @@ describe('the config page from schema.json', () => {
     }
   });
 
+  it('links the write key to its page (spec sealup/sealup-private#88 decision 30)', () => {
+    const write = page.split(/^### /m).find((section) => section.startsWith('`write`')) ?? '';
+    assert.match(write, /\(\/write\/\)/);
+  });
+
+  // Spec sealup/sealup-private#88 decision 9, story 18, 0045: to switch a project by hand.
+  it('shows the hidden form of a public repository, with its three variables', () => {
+    const hidden = page.split(/^## /m).find((section) => section.startsWith('A public repository\n')) ?? '';
+    for (const line of [
+      'server: ${SEALUP_SERVER}',
+      'hostKey: ${SEALUP_HOST_KEY}',
+      'tlsFingerprint: ${SEALUP_TLS_FINGERPRINT}',
+    ]) {
+      assert.ok(hidden.includes(line), line);
+    }
+    assert.match(hidden, /\(\/security\/#a-public-repository\)/);
+  });
+
   it('gives a key its description, its values and its range', () => {
     assert.match(page, /SFTP requests in flight \(default 64\); FTP connections \(default 4/);
     assert.match(page, /`empty-source`/);

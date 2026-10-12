@@ -59,7 +59,7 @@ async function deployedSite() {
     path.startsWith('/home/deploy/.sealup/'),
   );
   if (manifest === undefined) throw new Error('no manifest after the first deploy');
-  return { project, server, lock: `${manifest}.lock` };
+  return { project, root: project.root, server, lock: `${manifest}.lock` };
 }
 
 /** Whatever the server holds under the manifest folder that is a lock. */
@@ -744,12 +744,12 @@ describe('a lock with no note over FTP (its note is written in more than one ste
 
 describe('a dry run', () => {
   it('reports a held lock, never takes one, and still shows its plan (exit 0)', async () => {
-    const { project, server, lock } = await deployedSite();
+    const { root, server, lock } = await deployedSite();
     server.seedFile(`${lock}/note.json`, note(minute));
-    writeFileSync(join(project.root, 'public_html', 'index.html'), 'v2');
+    writeFileSync(join(root, 'public_html', 'index.html'), 'v2');
     const before = server.files();
 
-    const run = await runMain(['deploy', 'production', '-n'], { cwd: project.root, env, server });
+    const run = await runMain(['deploy', 'production', '--dry-run'], { cwd: root, env, server });
 
     expect(run.stderr).toContain(
       goldenText(
@@ -768,11 +768,11 @@ describe('a dry run', () => {
   });
 
   it('takes no lock when none is held', async () => {
-    const { project, server } = await deployedSite();
+    const { root, server } = await deployedSite();
     const files = server.files();
     const folders = server.folders();
 
-    const run = await runMain(['deploy', 'production', '-n'], { cwd: project.root, env, server });
+    const run = await runMain(['deploy', 'production', '--dry-run'], { cwd: root, env, server });
 
     expect(run.exitCode).toBe(0);
     expect(run.stderr).not.toContain(' ! ');

@@ -9,12 +9,14 @@ import {
   type AllowedRisk,
   type ConfigIssue,
   type ConfigPlace,
+  type FromVariables,
   type HostKey,
   isFtp,
   type Mapping,
   maxFtpConnections,
   type PullEntry,
   type RemotePath,
+  revealingValues,
   type Secret,
   type ServerUrl,
   type Target,
@@ -61,6 +63,11 @@ interface TargetFacts {
    * the target picker shows (S12). Never a refused `user:password@` URL (R3).
    */
   readonly server?: string;
+  /**
+   * Its parts written as one `${NAME}` reference (decision 0045), whether or not the variable is
+   * set: what `keyscan --save` must not write over. Absent when none is.
+   */
+  readonly fromVariables?: FromVariables;
   /** Its `pull` entries that resolved (`sealup` alone shows them, S05). */
   readonly pulls: readonly PullEntry[];
   /**
@@ -112,6 +119,8 @@ export interface Context {
   readonly place: (path: Path) => ConfigPlace;
   /** Every Secret made while loading (LoadedSecrets). */
   readonly secrets: Secret[];
+  /** Every value read from a variable that GitHub's form masks (decision 0045). */
+  readonly hidden: string[];
 }
 
 export type ListItem = readonly [text: string, path: Path];
@@ -154,12 +163,26 @@ export async function resolveTarget(
     return undefined;
   };
 
+  const fromVariables = partsFromVariables(input);
+  /** Masks a value read from a variable in GitHub's form (decision 0045); never redacted. */
+  const hide = (...values: string[]): void => {
+    for (const value of values) if (value !== '') context.hidden.push(value);
+  };
+
   let server: Target['server'] | undefined;
   const serverText = fill(input.server, pathOf('server'));
   if (serverText !== undefined) {
     const parsed = parseServerUrl(serverText);
     if (parsed.ok) server = parsed.url;
     else issues.push({ code: 'server-url', ...at('server') });
+    if (fromVariables.server !== undefined) {
+      hide(
+        ...revealingValues({
+          server: serverText,
+          ...(server === undefined ? {} : { url: server }),
+        }),
+      );
+    }
   }
 
   /**
@@ -210,6 +233,9 @@ export async function resolveTarget(
     if (line !== undefined) {
       hostKey = parseHostKey(line);
       if (hostKey === undefined) issues.push({ code: 'host-key', ...at('hostKey') });
+      if (fromVariables.hostKey !== undefined) {
+        hide(...revealingValues({ hostKey: { line, ...hostKey } }));
+      }
     }
   }
 
@@ -217,6 +243,9 @@ export async function resolveTarget(
   let tlsFingerprint: string | undefined;
   if (input.tlsFingerprint !== undefined && server?.protocol === 'ftps') {
     const value = fill(input.tlsFingerprint, pathOf('tlsFingerprint'));
+    if (value !== undefined && fromVariables.tlsFingerprint !== undefined) {
+      hide(...revealingValues({ certificate: value }));
+    }
     if (value !== undefined && fingerprintPattern.test(value)) {
       tlsFingerprint = value.toUpperCase();
     } else if (value !== undefined) {
@@ -269,6 +298,7 @@ export async function resolveTarget(
           : 'saved',
     ...(url === undefined ? {} : { url }),
     ...(server === undefined ? {} : { host: server.host, server: input.server }),
+    ...(Object.keys(fromVariables).length === 0 ? {} : { fromVariables }),
     pulls,
     ...(server === undefined
       ? {}
@@ -319,8 +349,21 @@ export async function resolveTarget(
         hostKey: input.hostKey === undefined ? undefined : at('hostKey'),
         ...(input.tlsFingerprint === undefined ? {} : { tlsFingerprint: at('tlsFingerprint') }),
       },
+      ...(Object.keys(fromVariables).length === 0 ? {} : { fromVariables }),
     },
   };
+}
+
+/** The connection keys whose whole value is one `${NAME}` reference, by variable (0045). */
+function partsFromVariables(input: TargetInput): FromVariables {
+  const variableOf = (text: string | undefined): string | undefined =>
+    text === undefined ? undefined : referenceOf(text)?.variable;
+  const parts = {
+    server: variableOf(input.server),
+    hostKey: variableOf(input.hostKey),
+    tlsFingerprint: variableOf(input.tlsFingerprint),
+  };
+  return Object.fromEntries(Object.entries(parts).filter(([, name]) => name !== undefined));
 }
 
 /**

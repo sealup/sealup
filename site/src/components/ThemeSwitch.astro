@@ -1,0 +1,126 @@
+---
+// The theme switch (plan 06 ruling 4): one button showing the active theme, the moon in dark and
+// the sun in light; a click switches to the other theme and keeps the choice. Until then the page
+// follows the system. It replaces Starlight's select (the ThemeSelect override in
+// astro.config.mjs) and sits in the home page's header: one markup, one script. The choice is
+// kept where Starlight keeps its own (src/theme/theme.ts), so Starlight's head script and the
+// home page's apply it before the first paint; the icon follows the page's `data-theme` in CSS.
+//
+// Colours: Starlight's by default; a page sets --theme-switch-* to use its own (home.css).
+---
+
+<sealup-theme-switch>
+  <button type="button" aria-label="Switch theme" title="Switch theme">
+    <svg
+      class="moon"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M20.5 14.2A8.5 8.5 0 1 1 9.8 3.5a6.8 6.8 0 0 0 10.7 10.7z"></path>
+    </svg>
+    <svg
+      class="sun"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      stroke-width="2"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="4"></circle>
+      <path
+        d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"
+      ></path>
+    </svg>
+  </button>
+</sealup-theme-switch>
+
+<script>
+  import { otherTheme, readTheme, shownTheme, storageKey, switchLabel, type Theme } from '../theme/theme.ts';
+
+  const prefersLight = matchMedia('(prefers-color-scheme: light)');
+
+  const stored = (): Theme | undefined => {
+    try {
+      return readTheme(localStorage.getItem(storageKey));
+    } catch {
+      return undefined;
+    }
+  };
+
+  const current = (): Theme => shownTheme(stored(), prefersLight.matches);
+
+  /** Shows a theme: the page's, and the name of every switch on the page. */
+  const show = (theme: Theme): void => {
+    document.documentElement.dataset.theme = theme;
+    for (const button of document.querySelectorAll('sealup-theme-switch button')) {
+      button.setAttribute('aria-label', switchLabel(theme));
+      button.setAttribute('title', switchLabel(theme));
+    }
+  };
+
+  class ThemeSwitch extends HTMLElement {
+    connectedCallback(): void {
+      this.querySelector('button')?.addEventListener('click', () => {
+        const next = otherTheme(current());
+        try {
+          localStorage.setItem(storageKey, next);
+        } catch {}
+        show(next);
+      });
+    }
+  }
+  customElements.define('sealup-theme-switch', ThemeSwitch);
+
+  show(current());
+  // The system's theme, while nothing is chosen.
+  prefersLight.addEventListener('change', () => {
+    if (stored() === undefined) show(current());
+  });
+  // A page back from the back-forward cache shows the choice made since.
+  addEventListener('pageshow', (event) => {
+    if (event.persisted) show(current());
+  });
+</script>
+
+<style>
+  sealup-theme-switch {
+    display: inline-flex;
+    flex: none;
+    align-self: center;
+  }
+  button {
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border: 1px solid var(--theme-switch-line, var(--sl-color-gray-5));
+    border-radius: 999px;
+    background: transparent;
+    color: var(--theme-switch-fg, var(--sl-color-gray-2));
+    cursor: pointer;
+  }
+  button:hover {
+    color: var(--theme-switch-hover, var(--sl-color-white));
+  }
+  button:focus-visible {
+    outline: 2px solid var(--theme-switch-on, var(--sl-color-text-accent));
+    outline-offset: 1px;
+  }
+  svg {
+    width: 16px;
+    height: 16px;
+  }
+  /* The active theme's icon; the page's head script sets data-theme before the first paint. */
+  :global(:root[data-theme='light']) .moon,
+  :global(:root:not([data-theme='light'])) .sun {
+    display: none;
+  }
+</style>

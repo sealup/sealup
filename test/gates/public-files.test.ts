@@ -57,6 +57,36 @@ describe('Dependabot (R25)', () => {
 const headings = (path: string): string[] =>
   [...read(path).matchAll(/^## (.+)$/gm)].map((match) => match[1] ?? '');
 
+/** The wordmark as the site serves it (site/src/pages/brand/). */
+const wordmark = {
+  light: 'https://sealup.dev/brand/sealup-wordmark.svg',
+  dark: 'https://sealup.dev/brand/sealup-wordmark-on-dark.svg',
+};
+
+/** The README's badges, in order: where each links, its image, its text. */
+const badges = [
+  {
+    href: 'https://github.com/sealup/sealup/actions/workflows/ci.yml',
+    image: 'https://github.com/sealup/sealup/actions/workflows/ci.yml/badge.svg',
+    alt: 'CI',
+  },
+  {
+    href: 'https://www.npmjs.com/package/sealup',
+    image: 'https://img.shields.io/npm/v/sealup',
+    alt: 'npm version',
+  },
+  {
+    href: 'https://scorecard.dev/viewer/?uri=github.com/sealup/sealup',
+    image: 'https://api.scorecard.dev/projects/github.com/sealup/sealup/badge',
+    alt: 'OpenSSF Scorecard',
+  },
+  {
+    href: 'https://github.com/sealup/sealup/blob/main/LICENSE',
+    image: 'https://img.shields.io/badge/licence-MIT-blue',
+    alt: 'Licence: MIT',
+  },
+];
+
 describe('README (exploration 05 §2)', () => {
   const readme = read('README.md');
 
@@ -89,11 +119,47 @@ describe('README (exploration 05 §2)', () => {
     const lines = (block ?? '').split('\n').filter((line) => line !== '');
     expect(lines).toHaveLength(6);
     for (const line of lines) expect(printed, line).toContain(line);
-    expect(readme).not.toMatch(/!\[|<img|\.gif\b/i);
+    // The only images are the wordmark and the badges (spec #88 decisions 27, 28).
+    expect(readme).not.toMatch(/!\[|\.gif\b/i);
+    expect([...readme.matchAll(/<img\b[^>]*\bsrc="([^"]+)"/g)].map(([, src]) => src)).toEqual([
+      wordmark.light,
+      ...badges.map((badge) => badge.image),
+    ]);
   });
 
-  it('gives the action pinned by SHA, the npx command and the verify commands', () => {
-    expect(readme).toMatch(/uses: sealup\/sealup@<[^>]+> # v\d+\.\d+\.\d+/);
+  // npm shows only absolute images, and never the <picture>'s <source>: its <img> is the light
+  // wordmark. GitHub's dark mode takes the dark one (spec #88 decision 27).
+  it('opens with the wordmark, served by sealup.dev, dark on GitHub in dark mode', () => {
+    const top = readme.slice(0, readme.indexOf('**'));
+    expect(top).toContain(
+      `<source media="(prefers-color-scheme: dark)" srcset="${wordmark.dark}">`,
+    );
+    expect(top).toMatch(new RegExp(`<img src="${wordmark.light}" alt="sealup"`));
+    expect(top.indexOf('<picture>')).toBeLessThan(top.indexOf('<source'));
+    expect(top.indexOf('<img')).toBeLessThan(top.indexOf('</picture>'));
+  });
+
+  it('shows the badges under it, each linked to its source, no download count', () => {
+    const top = readme.slice(0, readme.indexOf('**'));
+    const linked = [...top.matchAll(/<a href="([^"]+)"><img src="([^"]+)" alt="([^"]+)"/g)];
+    expect(linked.map(([, href, image, alt]) => ({ href, image, alt }))).toEqual(badges);
+    expect(top.indexOf('</picture>')).toBeLessThan(top.indexOf('<a href='));
+    expect(top).not.toMatch(/download|\/npm\/d[wmyt]\//i);
+  });
+
+  it('says on the write: line of its config what write: does (spec #88 decision 31)', () => {
+    const line = readme.split('\n').find((text) => text.startsWith('write:')) ?? '';
+    expect(line).toMatch(/^write: +# .*\bserver\b.*\bdeploy\b/);
+  });
+
+  // Decision 0043: by its version tag, between release-please's version markers.
+  it('gives the action by its version, the npx command and the verify commands', () => {
+    const marked =
+      /<!-- x-release-please-start-version -->\n([\s\S]*?)<!-- x-release-please-end -->/;
+    expect(marked.exec(readme)?.[1]).toMatch(
+      /^- uses: sealup\/sealup@v\d+\.\d+\.\d+\n {2}id: sealup\n/m,
+    );
+    expect(readme).not.toMatch(/sealup\/sealup@(?!v\d)/);
     expect(readme).toContain('npx sealup init');
     expect(readme).toContain('gh attestation verify');
     expect(readme).toContain('npm audit signatures');

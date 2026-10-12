@@ -74,7 +74,7 @@ describe('the cli bundle', () => {
     const run = await runCli([join(outdir, 'cli.mjs'), '--help'], { cwd: outdir });
     expect(run.exitCode).toBe(0);
     expect(run.stdout).toMatch(/^Deploy your build to shared hosting over SFTP, SSH or FTP\.\n/);
-    expect(run.stdout).toContain('  -n, --dry-run           Show every change, change nothing\n');
+    expect(run.stdout).toContain('      --dry-run           Show every change, change nothing\n');
     expect(run.stderr).toBe('');
   });
 
@@ -109,7 +109,7 @@ describe('the cli bundle', () => {
 
     it('connects, shows every change, changes nothing, and prints the JSON object', async () => {
       const before = server.files();
-      const run = await runCli([join(outdir, 'cli.mjs'), 'deploy', '-n', '--json'], {
+      const run = await runCli([join(outdir, 'cli.mjs'), 'deploy', '--dry-run', '--json'], {
         cwd: project,
       });
 
@@ -433,11 +433,10 @@ describe('the cli bundle', () => {
     }
   });
 
-  it("pins init's workflow to the tag, with a comment saying to pin: no release SHA in this build", async () => {
+  // Decision 0043: the bundle names sealup's step by the version beside it, its tag.
+  it("names init's workflow step by this version's tag", async () => {
     expect(await initWorkflow(join(outdir, 'cli.mjs'))).toContain(
-      `      # Pin this step to v${packageVersion}'s full commit SHA (on its release page), as the\n` +
-        '      # steps above are: a tag can move, a commit cannot.\n' +
-        `      - uses: sealup/sealup@v${packageVersion}\n`,
+      `      - uses: sealup/sealup@v${packageVersion}\n        id: sealup\n`,
     );
   });
 });
@@ -483,41 +482,6 @@ describe('a bundled CommonJS library', () => {
   it('lists the library in the licence file', () => {
     const text = readFileSync(join(folder, 'out', 'THIRD_PARTY_LICENSES.txt'), 'utf8');
     expect(text).toContain('cjs-lib@1.2.3 (MIT)\n\nMIT licence of cjs-lib');
-  });
-});
-
-// Spec #41 decision 38: the public release build puts the release commit's SHA into the CLI
-// bundle, and init pins the workflow's sealup step to it. The CLI bundle alone is built (its
-// entry named): the action's bundle never takes the SHA (check-dist.test.ts proves it).
-describe('a release build', () => {
-  const releaseSha = '0123456789abcdef0123456789abcdef01234567';
-  let root = '';
-
-  beforeAll(async () => {
-    root = mkdtempSync(join(tmpdir(), 'sealup-release-'));
-    writeFileSync(join(root, 'package.json'), JSON.stringify({ version: packageVersion }));
-    const entry = join(repoRoot, 'src', 'cli', 'bin.ts');
-    await build({ outdir: join(root, 'dist'), entry, releaseSha });
-  });
-  afterAll(() => rmSync(root, { recursive: true, force: true }));
-
-  it("pins init's workflow to the release commit, the tag in a comment", async () => {
-    const text = await initWorkflow(join(root, 'dist', 'cli.mjs'));
-    expect(text).toContain(`      - uses: sealup/sealup@${releaseSha} # v${packageVersion}\n`);
-    expect(text).not.toContain('Pin this step');
-  });
-
-  it('starts the release bundle with the shebang too', () => {
-    const text = readFileSync(join(root, 'dist', 'cli.mjs'), 'utf8');
-    expect(text.slice(0, 20)).toBe('#!/usr/bin/env node\n');
-  });
-
-  it('refuses a release SHA that is not a full commit SHA, building nothing', async () => {
-    const outdir = join(root, 'refused');
-    await expect(build({ outdir, releaseSha: 'v1.2.3' })).rejects.toThrow(
-      '--release-sha must be a full commit SHA (40 hex digits), not "v1.2.3"',
-    );
-    expect(() => readFileSync(join(outdir, 'cli.mjs'))).toThrow();
   });
 });
 

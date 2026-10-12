@@ -183,8 +183,6 @@ describe('workflowText: the workflow init writes', () => {
         '      - name: Build',
         '        run: npm ci && npm run build',
         '',
-        "      # Pin this step to v1.2.3's full commit SHA (on its release page), as the",
-        '      # steps above are: a tag can move, a commit cannot.',
         '      - uses: sealup/sealup@v1.2.3',
         '        id: sealup',
         '        env:',
@@ -194,15 +192,15 @@ describe('workflowText: the workflow init writes', () => {
     );
   });
 
-  // Spec #41 decision 38: the public release build puts the release commit's SHA in the bundle.
-  it('pins the sealup step to the release commit with its tag in a comment, when it has the SHA', () => {
-    const sha = '0123456789abcdef0123456789abcdef01234567';
-    const text = workflowText({ version: '1.2.3', releaseSha: sha, fromRepoRoot: '' });
+  // Decision 0043: sealup's step by its version tag, which immutable releases lock; no SHA, no
+  // comment asking for one.
+  it('gives the sealup step by its version tag', () => {
+    const text = workflowText({ version: '1.2.3', fromRepoRoot: '' });
     expect(text).toContain(
       '      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1\n        with:\n          persist-credentials: false\n\n' +
-        '      - uses: sealup/sealup@0123456789abcdef0123456789abcdef01234567 # v1.2.3\n        id: sealup\n',
+        '      - uses: sealup/sealup@v1.2.3\n        id: sealup\n',
     );
-    expect(text).not.toContain('Pin this step');
+    expect(text).not.toMatch(/sealup\/sealup@[0-9a-f]{40}|# Pin/);
   });
 
   it("pins checkout and setup-node to the SHAs of this repo's CI", () => {
@@ -221,11 +219,7 @@ describe('workflowText: the workflow init writes', () => {
     expect(text).not.toContain('setup-node');
     expect(text).not.toContain('Build');
     expect(text).toContain('actions/checkout@');
-    expect(text).toContain(
-      "\n\n      # Pin this step to v1.2.3's full commit SHA (on its release page), as the\n" +
-        '      # steps above are: a tag can move, a commit cannot.\n' +
-        '      - uses: sealup/sealup@v1.2.3\n',
-    );
+    expect(text).toContain('persist-credentials: false\n\n      - uses: sealup/sealup@v1.2.3\n');
   });
 
   it('runs in the project folder when it is below the repo root', () => {

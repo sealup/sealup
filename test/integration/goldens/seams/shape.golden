@@ -1,6 +1,6 @@
 // src/contracts/index.ts
 export { type RemotePath, type Secret, type ServerPath, type Sha256, shortestSecret, } from './brands.ts';
-export { type AllowedRisk, type ConfigExpected, type ConfigIssue, type ConfigPlace, type HostKey, isFtp, type Mapping, maxFtpConnections, type PullEntry, type SecretFile, type ServerUrl, type Target, type VariableSource, } from './config.ts';
+export { type AllowedRisk, type ConfigExpected, type ConfigIssue, type ConfigPlace, type FromVariables, type HostKey, isFtp, type Mapping, maxFtpConnections, type PullEntry, revealingValues, type SecretFile, type ServerUrl, type Target, type VariableSource, } from './config.ts';
 export type { EmptySource, FileRecord, KeptFile, ListedFile, LocalFile, LocalTree, Manifest, ManifestRead, MirrorListing, Plan, PlanBlock, PlanInput, PlanOp, ServerCheck, WriteRead, } from './plan.ts';
 export type { PullDownload, PullEvent, PullPlan, PullReporter } from './pull.ts';
 export { type CertificateReport, type CheckReport, type DeployEvent, ExitCode, type FailedOp, type HostKeyCheck, type KeyscanReport, type LockHolder, type MirroredPull, type Outcome, type PartialRun, type Problem, type Progress, type Reporter, type RunWarning, type TargetCheck, type Timings, type UnsafeName, type UploadCheck, } from './run.ts';
@@ -218,7 +218,24 @@ export interface Target {
     readonly allow: ReadonlySet<AllowedRisk>;
     readonly checkServer: boolean;
     readonly places: TargetPlaces;
+    readonly fromVariables?: FromVariables;
 }
+export interface FromVariables {
+    readonly server?: string;
+    readonly hostKey?: string;
+    readonly tlsFingerprint?: string;
+}
+export type RevealingPart = {
+    readonly server: string;
+    readonly url?: Pick<ServerUrl, 'user' | 'host'>;
+} | {
+    readonly hostKey: {
+        readonly line?: string;
+    } & Partial<HostKey>;
+} | {
+    readonly certificate: string;
+};
+export declare function revealingValues(part: RevealingPart): string[];
 export interface VariableSource {
     readonly name: string;
     readonly from: 'environment' | 'env-file';
@@ -410,6 +427,7 @@ export type Problem = {
     readonly place: ConfigPlace;
     readonly received: ScannedHostKey;
     readonly asked: boolean;
+    readonly variable?: string;
 } | {
     readonly code: 'certificate-not-replaced';
     readonly target: string;
@@ -419,6 +437,7 @@ export type Problem = {
     readonly place: ConfigPlace;
     readonly received: ServerCertificate;
     readonly asked: boolean;
+    readonly variable?: string;
 } | {
     readonly code: 'empty-source';
     readonly folder: string;

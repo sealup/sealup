@@ -27,7 +27,8 @@ The common causes:
 - a path with `..` or a leading `/` where a folder inside the target is needed;
 - a variable written wrong (write `${NAME}`, or `$$` for one `$`);
 - a secret that is too short, or holds a line break;
-- a file's content written in a `write:` entry instead of one `${NAME}`;
+- a file's content written in a `write:` entry instead of one `${NAME}` (see
+  [Files written from a secret](/write/));
 - server keys at the top level next to `targets:` (move them into each target);
 - YAML that does not parse.
 

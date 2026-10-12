@@ -41,6 +41,14 @@
   --sl-color-accent-high: #165436;
 }
 
+/* The header's social links: the text colour, the accent on hover and focus only. */
+.social-icons a {
+  color: var(--sl-color-text);
+}
+.social-icons a:is(:hover, :focus-visible) {
+  color: var(--sl-color-text-accent);
+}
+
 /* Headings in the display face. */
 h1,
 .sl-markdown-content :is(h2, h3) {

@@ -84,7 +84,7 @@ export function pullDryRunStartLines(target: Target): Line[] {
   return [dryRunLabel(`nothing will be downloaded from ${target.name}`)];
 }
 
-/** A pull's dry run (`-n`): every download under its reason, then what is already here. */
+/** A pull's dry run (`--dry-run`): every download under its reason, then what is already here. */
 export function pullDryRunPlanLines(plan: PullPlan): Line[] {
   const { fresh, replaced } = byReason(plan);
   const lines: Line[] = directionLines(plan);

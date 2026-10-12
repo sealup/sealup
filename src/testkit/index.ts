@@ -58,6 +58,13 @@
 //                                        run in a child process
 //   splitMasks(log)                      a GitHub-form log's leading `::add-mask::` lines (the
 //                                        one place a secret is written, R2) and the rest
+//   hiddenCanaries, githubMasks(log),    a public repo's canary server and host key (0045):
+//   githubLog(log),                      what GitHub shows of a text once the log's masks are
+//   expectHiddenMasked(places, also?)    registered (githubLog: line by line, a later mask
+//                                        hiding only what follows it), and the check that
+//                                        neither canary (nor its user, host or fingerprint,
+//                                        nor a value in `also`) shows there or in the job
+//                                        summary; runMain applies it in GitHub's form
 //   userKey({ passphrase? })             a fresh test-only ed25519 login key: the private key
 //                                        file (OpenSSH form) and its authorized_keys line;
 //                                        createSftpServer({ authorizedKeys }) accepts it
@@ -87,8 +94,12 @@ export { userKey } from './keys.ts';
 export {
   canaries,
   canaryKeyLine,
+  expectHiddenMasked,
   expectNoLeaks,
   findLeaks,
+  githubLog,
+  githubMasks,
+  hiddenCanaries,
   readTree,
   splitMasks,
 } from './leak.ts';

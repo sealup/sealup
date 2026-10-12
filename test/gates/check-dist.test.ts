@@ -78,7 +78,7 @@ describe('check-dist, on the real build', () => {
 
   // Spec #41 decision 34: a release PR bumps `version` and nothing else, so check-dist must stay
   // green through it. One release build, run in a copy of the repo whose package.json says
-  // another version, with the release SHA (decision 38), which goes into the CLI bundle only.
+  // another version. Since 0043 no bundle carries the release commit either.
   describe('through a release', () => {
     let copy: string | undefined;
     const out = (): string => join(copy ?? '', 'out');
@@ -89,29 +89,17 @@ describe('check-dist, on the real build', () => {
       for (const folder of ['src', 'scripts']) {
         cpSync(join(repoRoot, folder), join(copy, folder), { recursive: true });
       }
-      const sha = '0123456789abcdef0123456789abcdef01234567';
-      const built = await runNode(
-        [join(copy, 'scripts', 'build.ts'), '--outdir', out(), '--release-sha', sha],
-        copy,
-      );
+      const built = await runNode([join(copy, 'scripts', 'build.ts'), '--outdir', out()], copy);
       expect(built.exitCode, built.output).toBe(0);
     });
     afterAll(() => removeProject(copy));
 
-    it('passes the action bundle built with another version and the release SHA', async () => {
+    it('passes both bundles built with another version', async () => {
       const run = await runNode(
-        [script, '--committed', out(), '--fresh', committed, 'action.mjs'],
+        [script, '--committed', out(), '--fresh', committed, 'action.mjs', 'cli.mjs'],
         repoRoot,
       );
       expect(run.exitCode, run.output).toBe(0);
-    });
-
-    it('finds the release SHA in the CLI bundle, which is not committed', async () => {
-      const run = await runNode(
-        [script, '--committed', out(), '--fresh', committed, 'cli.mjs'],
-        repoRoot,
-      );
-      expect(run.output).toContain('cli.mjs differs from a fresh build');
     });
   });
 });

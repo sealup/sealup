@@ -616,6 +616,7 @@ describe('loadConfig: problems carry a place, never a value (R3, R6)', () => {
       ok: false,
       issues: [{ code: 'file-not-found', file, keyPath: '' }],
       secrets: [],
+      hidden: [],
     });
   });
 });

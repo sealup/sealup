@@ -79,6 +79,7 @@ describe.concurrent('workflows, proven to bite', () => {
     ['pages.yml', 'deploy', ['pages', 'id-token']],
     ['release-please.yml', 'release-please', ['contents', 'pull-requests']],
     ['scorecard.yml', 'analysis', ['id-token']],
+    ['codeql.yml', 'analyze', ['security-events']],
   ] as const)(
     'passes %s when job %s writes only what the table allows',
     async (workflow, job, scopes) => {

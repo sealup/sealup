@@ -38,6 +38,8 @@ const writeTable: Readonly<Record<string, Readonly<Record<string, readonly strin
   // Scorecard publishes its results to the OpenSSF API (the badge) with an OIDC token (spec #41
   // decision 39). No `security-events`: code scanning upload stays off.
   'scorecard.yml': { analysis: ['id-token'] },
+  // CodeQL uploads public source analysis, without write access to repository contents.
+  'codeql.yml': { analyze: ['security-events'] },
 };
 
 /**

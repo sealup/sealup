@@ -26,5 +26,10 @@
   },
   "devDependencies": {
     "playwright-core": "1.63.0"
+  },
+  "overrides": {
+    "postcss-nested": {
+      "postcss-selector-parser": "7.1.6"
+    }
   }
 }

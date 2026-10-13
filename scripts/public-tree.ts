@@ -56,6 +56,7 @@ const publicWorkflows = new Set([
   'release.yml',
   'pages.yml',
   'scorecard.yml',
+  'codeql.yml',
 ]);
 const privateWorkflows = new Set(['public-sync.yml', 'release-please.yml']);
 

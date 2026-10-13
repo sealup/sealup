@@ -23,6 +23,19 @@ updates:
       prefix: chore
       include: scope
 
+  - package-ecosystem: npm
+    directory: /site
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      site:
+        patterns: ['*']
+    commit-message:
+      prefix: chore
+      include: scope
+
   - package-ecosystem: github-actions
     directory: /
     schedule:

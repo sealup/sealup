@@ -26,10 +26,13 @@ interface Update {
 describe('Dependabot (R25)', () => {
   const updates = (yamlOf('.github/dependabot.yml') as { updates: readonly Update[] }).updates;
 
-  it('updates npm and the Actions, each in one grouped PR, after 7 days of cooldown', () => {
-    expect(updates.map((u) => u['package-ecosystem']).sort()).toEqual(['github-actions', 'npm']);
+  it('updates the CLI, site and Actions, each in one grouped PR, after 7 days of cooldown', () => {
+    expect(updates.map((u) => [u['package-ecosystem'], u.directory]).sort()).toEqual([
+      ['github-actions', '/'],
+      ['npm', '/'],
+      ['npm', '/site'],
+    ]);
     for (const update of updates) {
-      expect(update.directory).toBe('/');
       expect(update.cooldown?.['default-days']).toBe(7);
       const groups = Object.values(update.groups ?? {});
       expect(groups.map((group) => group.patterns)).toEqual([['*']]);

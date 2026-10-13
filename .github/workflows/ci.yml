@@ -53,6 +53,9 @@ jobs:
       - name: Install
         run: npm ci --ignore-scripts
 
+      - name: Dependency security audit
+        run: npm audit --audit-level=low
+
       # Type check, Biome, import rules, knip, unit and integration tests (proven-to-bite and
       # leak tests included).
       - name: Gates
@@ -163,6 +166,9 @@ jobs:
       # No install script runs in CI (R25); esbuild works without its own.
       - name: Install
         run: npm ci --ignore-scripts
+
+      - name: Dependency security audit
+        run: npm audit --audit-level=low
 
       - name: Site checks, proven to bite
         run: npm test

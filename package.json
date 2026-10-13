@@ -1,6 +1,6 @@
 {
   "name": "sealup",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Fast, safe deploys to shared hosting over SFTP, SSH or FTP.",
   "keywords": [
     "deploy",

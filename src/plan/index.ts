@@ -313,8 +313,12 @@ export function excludedOnServer(
   patterns: readonly string[],
 ): (path: RemotePath, folder?: boolean) => boolean {
   const matches = excludeMatcher(patterns);
+  const scoped = mappings.map((mapping) => ({
+    mapping,
+    matches: excludeMatcher(mapping.exclude ?? []),
+  }));
   return (path, folder) =>
-    mappings.some((mapping) => {
+    scoped.some(({ mapping, matches: scopedMatches }) => {
       // A single file holds only its own path (and config refused one an exclude matches).
       const rest =
         mapping.kind === 'file'
@@ -323,13 +327,15 @@ export function excludedOnServer(
             : undefined
           : inside(mapping.remote, path);
       if (rest === undefined) return false;
-      return matches(under(mapping.localFromConfig, rest), folder);
+      return matches(under(mapping.localFromConfig, rest), folder) || scopedMatches(rest, folder);
     });
 }
 
 /** A path an entry of the config sends (an upload's file; T33 adds the write entries). */
 export interface SentPath {
   readonly path: RemotePath;
+  /** The resolved upload/write entry itself: display locations need not be unique. */
+  readonly entry: object;
   /** The entry that sends it. */
   readonly place: ConfigPlace;
 }
@@ -340,28 +346,25 @@ export interface SentPath {
  * a file where the other needs a folder. Paths of one entry never clash with each other.
  */
 export function sameServerPath(sent: Iterable<SentPath>): ConfigIssue | undefined {
-  const files = new Map<RemotePath, ConfigPlace>();
-  const folders = new Map<RemotePath, ConfigPlace>();
-  for (const { path, place } of sent) {
+  const files = new Map<RemotePath, SentPath>();
+  const folders = new Map<RemotePath, SentPath>();
+  for (const sentPath of sent) {
+    const { path, place, entry } = sentPath;
     const above = foldersAbove(path);
-    const clashes: [RemotePath, ConfigPlace | undefined][] = [
+    const clashes: [RemotePath, SentPath | undefined][] = [
       [path, files.get(path)],
       [path, folders.get(path)],
-      ...above.map((folder): [RemotePath, ConfigPlace | undefined] => [folder, files.get(folder)]),
+      ...above.map((folder): [RemotePath, SentPath | undefined] => [folder, files.get(folder)]),
     ];
     for (const [at, other] of clashes) {
-      if (other !== undefined && !samePlace(other, place)) {
-        return { code: 'same-server-path', ...place, other, path: at };
+      if (other !== undefined && other.entry !== entry) {
+        return { code: 'same-server-path', ...place, other: other.place, path: at };
       }
     }
-    if (!files.has(path)) files.set(path, place);
-    for (const folder of above) if (!folders.has(folder)) folders.set(folder, place);
+    if (!files.has(path)) files.set(path, sentPath);
+    for (const folder of above) if (!folders.has(folder)) folders.set(folder, sentPath);
   }
   return undefined;
-}
-
-function samePlace(a: ConfigPlace, b: ConfigPlace): boolean {
-  return a.file === b.file && a.keyPath === b.keyPath;
 }
 
 /** `path` relative to `folder` (`''` is the target folder), or undefined when outside it. */

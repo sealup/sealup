@@ -5,6 +5,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { TransportError } from '../../src/contracts/index.ts';
 import { canaries, createFtpServer, type FtpServer, screenOf } from '../../src/testkit/index.ts';
 import { createProject, inGitHub, newProject, ref, runMain, versionLine } from '../deploy-kit.ts';
 import { dialing } from '../sftp-kit.ts';
@@ -15,7 +16,12 @@ afterEach(async () => {
 });
 
 async function ftpServer(
-  options: { readonly siteChmod?: boolean; readonly maxConnections?: number } = {},
+  options: {
+    readonly siteChmod?: boolean;
+    readonly maxConnections?: number;
+    readonly appendKeepsMode?: boolean;
+    readonly appendContentKeepsMode?: (path: string) => boolean;
+  } = {},
 ): Promise<FtpServer> {
   const server = await createFtpServer({ password: canaries.SEALUP_CANARY_PASSWORD, ...options });
   servers.push(server);
@@ -98,6 +104,107 @@ describe('deploy over FTP: parallel counts connections (spec #41 decision 4)', (
 
 // Spec #41 decision 7, story 13: a secret file must get mode 0600 before its first byte (R17).
 describe('deploy over FTP to a server that cannot set modes', () => {
+  it('records a disconnected public probe for cleanup on the next run', async () => {
+    const server = await ftpServer();
+    const config = ftpConfig()
+      .replace('ftp.example.com/www', 'ftp.example.com/site')
+      .replace('targets:', `write:\n  api/.env: ${ref('APP_ENV')}\ntargets:`);
+    const project = createProject(config, { 'public_html/index.html': 'application' });
+    const normal = dialing(server);
+    let probe: string | undefined;
+    const run = await runMain(['deploy', 'production', '--json'], {
+      cwd: project.root,
+      env: { APP_ENV: 'new secret' },
+      connect: async (target, options) => {
+        const session = await normal(target, options);
+        return {
+          ...session,
+          async put(source, to, putOptions) {
+            await session.put(source, to, putOptions);
+            if (putOptions?.mode !== undefined) {
+              probe = to;
+              throw new TransportError('connection-lost', 'lost');
+            }
+          },
+          remove(path) {
+            if (path === probe)
+              return Promise.reject(new TransportError('connection-lost', 'lost'));
+            return session.remove(path);
+          },
+        };
+      },
+    });
+    expect(run.exitCode).not.toBe(0);
+    expect(probe).toBeDefined();
+    expect(server.files().has(probe ?? '')).toBe(true);
+    const manifest = [...server.files()].find(([path]) => path.endsWith('.json'));
+    const pending = JSON.parse(new TextDecoder().decode(manifest?.[1].bytes)).pending;
+    expect(pending).toEqual([probe?.slice('/site/'.length)]);
+    expect(server.files().has('/site/index.html')).toBe(false);
+    const next = await runMain(['deploy', 'production', '--json'], {
+      cwd: project.root,
+      env: { APP_ENV: 'new secret' },
+      connect: normal,
+    });
+    expect(next.exitCode, next.stderr).toBe(0);
+    expect(server.files().has(probe ?? '')).toBe(false);
+  });
+  it.each(['existing', 'missing'])(
+    'keeps the application unchanged when an %s write folder resets modes on nonempty APPE',
+    async (folder) => {
+      const server = await ftpServer({
+        appendContentKeepsMode: (path) => !path.includes('/site/api/'),
+      });
+      server.seedFile('/site/index.html', 'old application');
+      if (folder === 'existing') server.seedFile('/site/api/.env', 'old secret', { mode: 0o600 });
+      const config = ftpConfig()
+        .replace('ftp.example.com/www', 'ftp.example.com/site')
+        .replace('targets:', `write:\n  api/.env: ${ref('APP_ENV')}\ntargets:`);
+      const project = createProject(config, { 'public_html/index.html': 'new application' });
+      const run = await runMain(['deploy', 'production', '--json'], {
+        cwd: project.root,
+        env: { APP_ENV: 'new secret' },
+        connect: dialing(server),
+      });
+      expect(run.exitCode).toBe(6);
+      expect(JSON.parse(run.stdout)).toMatchObject({
+        status: 'blocked',
+        uploaded: 0,
+        written: 0,
+        error: { code: 'secret-file-public' },
+      });
+      expect(new TextDecoder().decode(server.files().get('/site/index.html')?.bytes)).toBe(
+        'old application',
+      );
+      expect(new TextDecoder().decode(server.files().get('/site/api/.env')?.bytes)).toBe(
+        folder === 'existing' ? 'old secret' : '',
+      );
+      expect([...server.files().keys()].filter((path) => path.startsWith('/site/'))).toEqual([
+        ...(folder === 'existing' ? ['/site/api/.env'] : []),
+        '/site/index.html',
+      ]);
+    },
+  );
+  it('blocks secret files when APPE resets permissions, before uploading the build', async () => {
+    const server = await ftpServer({ appendKeepsMode: false });
+    const config = ftpConfig()
+      .replace('ftp.example.com/www', 'ftp.example.com/site')
+      .replace('targets:', `write:\n  api/.env: ${ref('APP_ENV')}\ntargets:`);
+    const project = createProject(config, { 'public_html/index.html': 'x' });
+    const run = await runMain(['deploy', 'production', '--json'], {
+      cwd: project.root,
+      env: { APP_ENV: 'APP_KEY=base64:not-a-real-key' },
+      connect: dialing(server),
+    });
+    expect(run.exitCode).toBe(6);
+    expect(JSON.parse(run.stdout)).toMatchObject({
+      status: 'blocked',
+      uploaded: 0,
+      written: 0,
+      error: { code: 'secret-file-public' },
+    });
+    expect([...server.files().keys()]).toEqual([]);
+  });
   it('refuses the write entries before any change: exit 6, the reason', async () => {
     const server = await ftpServer({ siteChmod: false });
     const config = ftpConfig()
@@ -114,7 +221,7 @@ describe('deploy over FTP to a server that cannot set modes', () => {
       [
         '  ✗ ftp.example.com cannot set file permissions: sealup stopped.',
         '    write.api/.env (line 3) writes /site/api/.env from a secret: it must get',
-        '    its file mode before its first byte, and the server refused SITE CHMOD.',
+        '    its file mode before its first byte, and the server cannot preserve it.',
         '    Deploy it over sftp:// instead, or remove that entry.',
         '',
         '    Nothing was changed on production.',

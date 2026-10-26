@@ -48,7 +48,7 @@ In GitHub Actions, after your build step. `sealup init` writes this workflow for
 
 <!-- x-release-please-start-version -->
 ```yaml
-- uses: sealup/sealup@v0.2.1
+- uses: sealup/sealup@v0.2.2
   id: sealup
   env:
     SEALUP_PASSWORD: ${{ secrets.SEALUP_PASSWORD }}
@@ -100,7 +100,7 @@ To verify a release:
 <!-- x-release-please-start-version -->
 ```sh
 npm audit signatures                                     # in a project that installed sealup
-v=0.2.1                                                  # the release to check
+v=0.2.2                                                  # the release to check
 gh release download v$v --repo sealup/sealup --pattern "sealup-$v.tgz"
 gh release verify v$v --repo sealup/sealup
 gh release verify-asset v$v sealup-$v.tgz --repo sealup/sealup
@@ -109,6 +109,10 @@ gh attestation verify sealup-$v.tgz --repo sealup/sealup
 <!-- x-release-please-end -->
 
 ## Links
+
+Created and maintained by [Samuel Asensi](https://samuelasensi.com) ([GitHub](https://github.com/sasensi)).
+
+I built sealup for the shared-hosting deployments in my client work, bringing that workflow into CI with explicit safeguards and reproducible tests.
 
 - Docs: [sealup.dev](https://sealup.dev)
 - [Security policy](SECURITY.md) · [Contributing](CONTRIBUTING.md) · [Code of conduct](CODE_OF_CONDUCT.md) · [Changelog](CHANGELOG.md)

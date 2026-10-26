@@ -34,6 +34,7 @@ screen names each secret to add (see [A public repository](/security/#a-public-r
 | Flag | What it does |
 |---|---|
 | `--server <url>` | The server address, `sftp://user@host[:port]/folder`, or `ssh://`, `ftps://`, `ftp://` |
+| `--from <file>` | Convert a sam-sync deployment config; review every mapping and reported omission before deploying |
 
 Global flags: `--json`, `--no-color` (see `sealup --help`).
 
@@ -56,3 +57,4 @@ sealup init --server sftp://deploy@ssh.example.com/home/site/www
 
 - [`sealup.yml`](/config/): the keys it writes.
 - [`sealup keyscan`](/keyscan/): how the host key is checked.
+- [Migrating from sam-sync](/migrate-sam-sync/): current local env files and shared targets.

@@ -49,6 +49,8 @@ uploaded and that left the build is listed apart:
 
 - **Excluded paths.** List the server folders your site writes into (uploads, caches, logs) in
   `exclude`, on their local side. Nothing below an excluded folder is even listed.
+  Mapping-scoped `exclude` patterns also protect their mapping's paths and are relative to
+  that source folder; global patterns are relative to the config. See [`sealup.yml`](/config/).
 - **sealup's file list and its lock**, which live outside the folders you upload to.
 - **Files written from a secret** (`write:`): they are part of what the deploy puts there.
 - **Symlinks on the server.** Without `allow: [symlinks]` a link stops the run before any

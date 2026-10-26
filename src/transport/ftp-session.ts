@@ -36,6 +36,7 @@ import { parseServerPath } from '../paths/index.ts';
 import { reveal } from '../secret/index.ts';
 import { changed, inTheWay } from './errors.ts';
 import { type Facts, parseListLine, parseMlsxLine } from './ftp-list.ts';
+import { ftpFileMode } from './ftp-mode.ts';
 import { connectionLost } from './requests.ts';
 
 /** One logged-in FTP connection, and the hooks the session sets on it. */
@@ -498,16 +499,31 @@ export function createFtpSession(links: readonly FtpLink[], options: FtpSessionO
     const ticket = turns.take();
     const work = async (): Promise<void> => {
       if (mode === undefined) return store(link, 'STOR', source, to, ticket);
+      if (!caps.setMode) throw modeRefused(to, '');
       // R17: an empty file, its mode, then the content: no byte is ever readable by others.
       await store(link, 'STOR', undefined, to, ticket);
       const chmod = await reply(link, `SITE CHMOD ${mode.toString(8).padStart(3, '0')} ${to}`);
       if (!isOk(chmod)) throw modeRefused(to, wordsOf(chmod.message));
+      if ((await ftpFileMode(link.client, to)) !== mode) throw modeRefused(to, '');
       try {
+        // Prove this destination with public bytes too: some folders reset modes only when
+        // an upload has content. Truncate the public probe before sending the caller's bytes.
+        await store(link, 'APPE', undefined, to);
+        if ((await ftpFileMode(link.client, to)) !== mode) throw modeRefused(to, '');
+        await store(link, 'APPE', { bytes: Buffer.from('sealup mode probe') }, to);
+        if ((await ftpFileMode(link.client, to)) !== mode) throw modeRefused(to, '');
+        await store(link, 'STOR', undefined, to);
+        const reset = await reply(link, `SITE CHMOD ${mode.toString(8).padStart(3, '0')} ${to}`);
+        if (!isOk(reset) || (await ftpFileMode(link.client, to)) !== mode)
+          throw modeRefused(to, '');
+        await store(link, 'APPE', undefined, to);
+        if ((await ftpFileMode(link.client, to)) !== mode) throw modeRefused(to, '');
         await store(link, 'APPE', source, to);
       } catch (error) {
         if (
           !(error instanceof TransportError) ||
-          !['protocol', 'permission'].includes(error.code)
+          !['protocol', 'permission'].includes(error.code) ||
+          error.reason === 'mode-refused'
         ) {
           throw error;
         }
@@ -515,7 +531,13 @@ export function createFtpSession(links: readonly FtpLink[], options: FtpSessionO
         // empty file instead, which is safe only where STOR keeps the file and its mode. An empty
         // STOR shows that first; a server that makes a new file gets no byte of the content.
         await store(link, 'STOR', undefined, to);
-        if ((await entryIn(link, to))?.mode !== mode) throw modeRefused(to, error.serverSaid ?? '');
+        if ((await ftpFileMode(link.client, to)) !== mode) {
+          throw modeRefused(to, error.serverSaid ?? '');
+        }
+        await store(link, 'STOR', { bytes: Buffer.from('sealup mode probe') }, to);
+        if ((await ftpFileMode(link.client, to)) !== mode) throw modeRefused(to, '');
+        await store(link, 'STOR', undefined, to);
+        if ((await ftpFileMode(link.client, to)) !== mode) throw modeRefused(to, '');
         await store(link, 'STOR', source, to);
       }
     };

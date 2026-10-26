@@ -15,6 +15,11 @@ write:
   api/.env: ${API_ENV}   # the whole .env, from the API_ENV secret
 ```
 
+For a local env file that changes with your app, an ordinary renamed upload is simpler and
+reads the current file on every deploy. Use mapping-scoped exclusions to keep source env
+names out of the containing folder upload: [Migrating from sam-sync](/migrate-sam-sync/).
+`write` is useful when the whole file comes from a variable, such as a CI secret.
+
 The left side is where the file goes on the server, inside the target folder. The right side is
 one variable, and its value is the file's whole content, every line of it.
 

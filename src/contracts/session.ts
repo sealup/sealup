@@ -22,8 +22,8 @@ export interface Capabilities {
   readonly replace: 'posix-rename' | 'unlink-then-rename';
   /**
    * Whether put() can give a file the mode asked for (R17). SFTP always can (on the open handle).
-   * FTP can when the server accepts `SITE CHMOD`, probed at connect on a temp file; a server that
-   * refuses it fails every put with a mode (`mode-refused`), before any content is sent.
+   * FTP can when the server accepts `SITE CHMOD` and uploads preserve it, probed at connect on
+   * a temp file. Otherwise every put with a mode fails (`mode-refused`), before any content.
    */
   readonly setMode: boolean;
   /**

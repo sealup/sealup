@@ -68,15 +68,17 @@ describe('convertSamSync: S03', () => {
         `password: $\{SEALUP_PASSWORD}`,
         hostKeyPlaceholder,
         'upload:',
-        '  public_html: www',
-        '  api: api',
-        'exclude:',
-        '  - public_html/resources',
-        '  - api/.env',
-        '  - api/.env.prod',
-        '  - api/storage',
-        'write:',
-        `  api/.env: $\{APP_ENV}`,
+        '  public_html:',
+        '    to: www',
+        '    exclude:',
+        '      - /resources',
+        '  api:',
+        '    to: api',
+        '    exclude:',
+        '      - /.env',
+        '      - /.env.prod',
+        '      - /storage',
+        '  api/.env.prod: api/.env',
         'pull:',
         '  www/resources: public_html/resources',
         '',
@@ -90,9 +92,7 @@ describe('convertSamSync: S03', () => {
       const edit = withEnvVariable('', made.secret);
       expect(edit.ok && parseEnv(edit.text)).toEqual({ SEALUP_PASSWORD: password });
     }
-    expect(conversion.write).toEqual([
-      { local: 'api/.env.prod', remote: 'api/.env', variable: 'APP_ENV' },
-    ]);
+    expect(conversion.envFiles).toEqual(['api/.env.prod']);
     expect(conversion.dropped).toEqual(['verbose', 'dry']);
     expect(conversion.download).toBe('same');
     expect(conversion.leftOut).toEqual([]);
@@ -197,7 +197,78 @@ describe('convertSamSync: the server', () => {
 });
 
 describe('convertSamSync: up', () => {
-  it("turns rsync's excludes into patterns from the config folder", () => {
+  it('retains repeated sources with each destination and its own directory exclusions', () => {
+    const conversion = convert({
+      ...minimal,
+      up: {
+        directories: [
+          { source: 'api/', destin: 'main/api/', excludes: ['/.env*', '/storage'] },
+          { source: 'api/', destin: 'designer/api/', excludes: ['/.env*', '/cache'] },
+        ],
+        files: [
+          { source: 'api/.env.prod', destin: 'main/api/.env' },
+          { source: 'api/.env.designer.prod', destin: 'designer/api/.env' },
+        ],
+      },
+    });
+    const document = parseDocument(convertedConfigText(conversion));
+    expect(document.errors).toEqual([]);
+    expect(document.toJS()).toMatchObject({
+      server: 'ssh://deploy@ssh.example.com/home/site',
+      upload: {
+        api: [
+          { to: 'main/api', exclude: ['/.env*', '/storage'] },
+          { to: 'designer/api', exclude: ['/.env*', '/cache'] },
+        ],
+        'api/.env.prod': 'main/api/.env',
+        'api/.env.designer.prod': 'designer/api/.env',
+      },
+    });
+    expect(document.toJS()).not.toHaveProperty('write');
+    expect(document.toJS()).not.toHaveProperty('exclude');
+    expect(conversion.leftOut).toEqual([]);
+  });
+
+  it('consolidates only exact redundant uploads and retains changed exclusion behavior', () => {
+    const conversion = convert({
+      ...minimal,
+      up: {
+        directories: [
+          { source: 'api/', destin: 'api/', excludes: ['/storage'] },
+          { source: 'api/', destin: 'api/', excludes: ['/storage'] },
+          { source: 'api/', destin: 'api/', excludes: ['/cache'] },
+        ],
+        files: [
+          { source: 'api/.env.prod', destin: 'api/.env' },
+          { source: 'api/.env.prod', destin: 'designer/.env' },
+        ],
+      },
+    });
+    expect(conversion.upload).toHaveLength(4);
+    expect(conversion.leftOut).toEqual([{ from: 'api/', to: 'api/', reason: 'twice' }]);
+    expect(parseDocument(convertedConfigText(conversion)).toJS().upload).toEqual({
+      api: [
+        { to: 'api', exclude: ['/storage'] },
+        { to: 'api', exclude: ['/cache'] },
+      ],
+      'api/.env.prod': ['api/.env', 'designer/.env'],
+    });
+    expect(conversion.envFiles).toEqual(['api/.env.prod']);
+  });
+
+  it('refuses control characters in local env-source paths before adding Git ignore rules', () => {
+    const conversion = convert({
+      ...minimal,
+      up: { files: [{ source: 'api/.env\n!sealup.env', destin: 'api/.env' }] },
+    });
+    expect(conversion.upload).toEqual([]);
+    expect(conversion.envFiles).toEqual([]);
+    expect(conversion.leftOut).toEqual([
+      { from: 'api/.env\n!sealup.env', to: 'api/.env', reason: 'outside' },
+    ]);
+  });
+
+  it("keeps rsync's excludes scoped to the source folder", () => {
     const conversion = convert({
       ...minimal,
       up: {
@@ -210,12 +281,12 @@ describe('convertSamSync: up', () => {
         ],
       },
     });
-    expect(conversion.exclude).toEqual([
-      'dist/uploads',
-      'dist/**/cache',
-      'dist/**/tmp/',
-      'dist/a/b',
-      'dist/**/*.log',
+    expect(conversion.upload[0]?.exclude).toEqual([
+      '/uploads',
+      '**/cache',
+      '**/tmp/',
+      '/a/b',
+      '**/*.log',
     ]);
   });
 
@@ -247,7 +318,7 @@ describe('convertSamSync: up', () => {
     expect(convertedConfigText(conversion)).toContain('upload:\n  dist: .\n');
   });
 
-  it('turns single files into uploads, and .env files into writes from APP_ENV, APP_ENV_2', () => {
+  it('turns every single file into a direct upload, recording env source paths to ignore', () => {
     const conversion = convert({
       ...minimal,
       up: {
@@ -262,13 +333,12 @@ describe('convertSamSync: up', () => {
     expect(conversion.upload).toEqual([
       { local: 'server/htaccess.prod', remote: 'www/.htaccess', kind: 'file' },
       { local: 'robots.txt', remote: 'robots.txt', kind: 'file' },
+      { local: 'api/.env.prod', remote: 'api/.env', kind: 'file' },
+      { local: 'admin/.env', remote: 'admin/.env', kind: 'file' },
     ]);
-    expect(conversion.write).toEqual([
-      { local: 'api/.env.prod', remote: 'api/.env', variable: 'APP_ENV' },
-      { local: 'admin/.env', remote: 'admin/.env', variable: 'APP_ENV_2' },
-    ]);
+    expect(conversion.envFiles).toEqual(['api/.env.prod', 'admin/.env']);
     expect(convertedConfigText(conversion)).toContain(
-      `write:\n  api/.env: $\{APP_ENV}\n  admin/.env: $\{APP_ENV_2}\n`,
+      '  api/.env.prod: api/.env\n  admin/.env: admin/.env\n',
     );
   });
 
@@ -286,13 +356,15 @@ describe('convertSamSync: up', () => {
         files: [{ source: 'api/connect.prod.php', destin: 'api/connect.php' }],
       },
     });
-    expect(conversion.upload).toEqual([{ local: 'api', remote: 'api', kind: 'folder' }]);
+    expect(conversion.upload).toEqual([
+      { local: 'api', remote: 'api', kind: 'folder', exclude: ['/connect.prod.php'] },
+      { local: 'api', remote: 'api2', kind: 'folder' },
+      { local: 'api/connect.prod.php', remote: 'api/connect.php', kind: 'file' },
+    ]);
     expect(conversion.leftOut).toEqual([
       { from: './', to: './', reason: 'project-folder' },
       { from: '../shared/', to: 'shared/', reason: 'outside' },
       { from: 'dist/', to: '../elsewhere/', reason: 'outside' },
-      { from: 'api/', to: 'api2/', reason: 'twice' },
-      { from: 'api/connect.prod.php', to: 'api/connect.php', reason: 'excluded' },
     ]);
   });
 
@@ -313,6 +385,26 @@ describe('convertSamSync: up', () => {
 });
 
 describe('convertSamSync: down', () => {
+  it('reports repeated pull sources rather than overwriting the first destination in YAML', () => {
+    const conversion = convert({
+      ...minimal,
+      down: {
+        directories: [
+          { source: 'www/resources/', destin: 'public/resources/' },
+          { source: 'www/resources/', destin: 'backup/resources/' },
+        ],
+      },
+    });
+    expect(conversion.pull).toEqual([
+      { remote: 'www/resources', local: 'public/resources', kind: 'folder' },
+    ]);
+    expect(conversion.leftOut).toEqual([
+      { from: 'www/resources/', to: 'backup/resources/', reason: 'twice' },
+    ]);
+    expect(parseDocument(convertedConfigText(conversion)).toJS().pull).toEqual({
+      'www/resources': 'public/resources',
+    });
+  });
   it('turns down entries of either file into pull entries, folders and files', () => {
     const conversion = convert(
       {
@@ -374,8 +466,7 @@ describe('convertedConfigText', () => {
     });
     const read = parseDocument(convertedConfigText(conversion)).toJS();
     expect(read).toMatchObject({
-      upload: { 'my site: v2': '#www' },
-      exclude: ['my site: v2/*.bak', 'my site: v2/**/!keep'],
+      upload: { 'my site: v2': { to: '#www', exclude: ['/*.bak', '**/!keep'] } },
       pull: { yes: 'true' },
     });
   });

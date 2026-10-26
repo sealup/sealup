@@ -93,15 +93,19 @@ function plainType(node: SchemaNode): string {
 /** The entries an object holds, wherever it sits in the key (inside anyOf, a pair's value). */
 function entries(node: SchemaNode): [string, SchemaNode, boolean][] {
   const found: [string, SchemaNode, boolean][] = [];
+  const seen = new Set<string>();
   const visit = (current: SchemaNode): void => {
     for (const [name, child] of Object.entries(current.properties ?? {})) {
-      found.push([name, child, current.required?.includes(name) ?? false]);
+      if (!seen.has(name)) {
+        seen.add(name);
+        found.push([name, child, current.required?.includes(name) ?? false]);
+      }
     }
     for (const option of current.anyOf ?? []) visit(option);
     if (typeof current.additionalProperties === 'object') visit(current.additionalProperties);
+    if (current.items !== undefined) visit(current.items);
   };
-  for (const option of node.anyOf ?? []) visit(option);
-  if (typeof node.additionalProperties === 'object') visit(node.additionalProperties);
+  visit(node);
   return found;
 }
 
@@ -198,6 +202,44 @@ export function configPage(schema: unknown): string {
     '    server: sftp://deploy@ssh.example.com/home/site/www',
     '    password: ${PRODUCTION_PASSWORD}',
     '```',
+    '',
+    'Shared `upload`, `exclude`, `write` and `pull` entries are added to each target. A target',
+    'does not replace a shared entry. If uploads only appear inside targets, omit the root',
+    '`upload`; no empty mapping is needed. A target must have an upload, write or pull operation.',
+    '',
+    '## Folder exclusions and renamed files',
+    '',
+    'Global `exclude` patterns are relative to this config file and apply to every mapping.',
+    'An upload entry can also have `exclude` patterns relative to its source folder. Those',
+    'patterns apply only to that folder mapping, including its deletions and mirror:',
+    '',
+    '```yaml',
+    'upload:',
+    '  api:',
+    '    to: api',
+    '    exclude: [".env*", "storage/"]',
+    '  api/.env.prod: api/.env',
+    '```',
+    '',
+    'This sends the current `.env.prod` only as `api/.env`, without extra env source copies.',
+    'A global exclusion still blocks an explicit file mapping; mapping-scoped patterns cannot',
+    'override global exclusions. Scoped exclusions are for folders, not single-file entries.',
+    '',
+    '## One source, several destinations',
+    '',
+    'Use a nonempty list when a source goes to more than one destination in the same target:',
+    '',
+    '```yaml',
+    'upload:',
+    '  dist:',
+    '    - preview/public_html',
+    '    - to: production/public_html',
+    '      exclude: ["drafts/"]',
+    '```',
+    '',
+    'Each item is a mapping with its own exclusions and optional `mirror`. The list keeps the',
+    'same target server and credentials. Use named targets when deployments need separate',
+    'roots or commands. See [Migrating from sam-sync](/migrate-sam-sync/) for a two-target example.',
     '',
     '## Variables',
     '',

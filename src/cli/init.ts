@@ -9,11 +9,11 @@
 // placeholder comment instead) and writes no sealup.env.
 // Esc or Ctrl-C at a question: exit 130, nothing written. Files are written only at the end.
 //
-// The sam-sync conversion (#37, S03, spec #24 decision 22; undocumented): after the
+// The sam-sync conversion (#37, S03, spec #24 decision 22): after the
 // existing-config check, a `.deployment.json` on a terminal is offered for conversion (a no goes
 // on with S02's questions); `--from <file>` converts without asking, and without a terminal too.
 // The converted sealup.yml takes the host-key step below (the placeholder without a terminal) and
-// the public question; the password and each file written from a secret go to sealup.env.
+// the public question; connection secrets go to sealup.env, app env files stay direct uploads.
 // Nothing is deleted.
 
 import { join, relative, sep } from 'node:path';
@@ -73,7 +73,7 @@ export interface InitContext {
   readonly version: string;
   /** `--server`, as typed. */
   readonly server: string | undefined;
-  /** `--from`, as typed: a sam-sync config to convert (undocumented). */
+  /** `--from`, as typed: a sam-sync config to convert. */
   readonly from: string | undefined;
   /** Where `--json` writes its object, when asked for. */
   readonly json: { readonly write: (text: string) => unknown } | undefined;
@@ -243,7 +243,7 @@ async function convert(
   }
 
   const env: Secret[] = [];
-  const secrets: { name: string; from?: string }[] = [];
+  const secrets: { name: string }[] = [];
   const notMoved: Extract<InitStep, { kind: 'converted' }>['notMoved'][number][] = [];
   let passwordAsked = false;
   if (!project.envHasPassword) {
@@ -260,26 +260,11 @@ async function convert(
       }
     }
   }
-  for (const { local, variable } of conversion.write) {
-    const checked = samSync.contents.get(variable);
-    if (checked?.ok === true) {
-      env.push(checked.secret);
-      secrets.push({ name: variable, from: local });
-    } else {
-      notMoved.push({
-        name: variable,
-        from: local,
-        reason: checked === undefined ? 'missing' : checked.reason,
-      });
-    }
-  }
-
   show({
     kind: 'converted',
     server: conversion.server,
     folders: conversion.upload.filter((entry) => entry.kind === 'folder'),
-    exclude: conversion.exclude,
-    files: [...conversion.write, ...conversion.upload.filter((entry) => entry.kind === 'file')],
+    files: conversion.upload.filter((entry) => entry.kind === 'file'),
     pulls: conversion.pull,
     secrets,
     notMoved,
@@ -290,6 +275,14 @@ async function convert(
     pullExcludes: conversion.pullExcludes,
     leftOut: conversion.leftOut,
   });
+
+  if (conversion.upload.length === 0 && conversion.pull.length === 0) {
+    return stop({
+      code: 'usage',
+      reason: 'sam-sync-no-actions',
+      name: samSync.files[0] ?? '.deployment.json',
+    });
+  }
 
   let hostKey: string | undefined;
   let publicRepo = false;
@@ -314,11 +307,7 @@ async function convert(
   }
 
   const values = publicRepo ? publicRepoValues(server.text, hostKey) : [];
-  const variables = [
-    passwordVariable,
-    ...conversion.write.map(({ variable }) => variable),
-    ...values.map((value) => value.envName),
-  ];
+  const variables = [passwordVariable, ...values.map((value) => value.envName)];
   const written = await writeProject({
     project,
     config: convertedConfigText(conversion, {
@@ -328,6 +317,7 @@ async function convert(
     env: [...env, ...values],
     version: context.version,
     variables,
+    ignoreFiles: conversion.envFiles,
   });
   if ('problem' in written) return stop(written.problem);
   return done(context, written.files, {
@@ -345,6 +335,7 @@ async function convert(
       scripts: samSync.scripts,
       pull: conversion.pull.length > 0,
       password: conversion.password !== undefined,
+      envFiles: conversion.envFiles,
     },
   });
 }
@@ -449,12 +440,9 @@ async function askPassword(
   }
 }
 
-/** The secrets a sam-sync project holds that sealup can mask: its password, its files' contents. */
+/** The connection password a sam-sync project holds, masked before conversion output. */
 function samSyncSecrets(samSync: SamSyncProject): Secret[] {
-  const made = [
-    ...(samSync.result.ok ? [samSync.result.conversion.password] : []),
-    ...samSync.contents.values(),
-  ];
+  const made = [...(samSync.result.ok ? [samSync.result.conversion.password] : [])];
   return made.flatMap((checked) => (checked?.ok === true ? [checked.secret] : []));
 }
 

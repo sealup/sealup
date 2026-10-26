@@ -7,6 +7,7 @@
 import { createHash } from 'node:crypto';
 import {
   cpSync,
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -18,6 +19,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { repoRoot } from '../../scripts/gates.ts';
+import { npmCliPath } from '../../scripts/release-assets.ts';
 import { type GateRun, runNode } from './gate-kit.ts';
 
 const script = join(repoRoot, 'scripts', 'release-assets.ts');
@@ -61,6 +63,59 @@ function project(root: string, change: (pkg: Record<string, unknown>) => void = 
 
 const hash = (file: string): string =>
   createHash('sha256').update(readFileSync(file)).digest('hex');
+
+describe('release output paths are literal arguments', () => {
+  it.each(['direct node', 'npm script'])(
+    '%s preserves paths without shell expansion',
+    async (mode) => {
+      const temp = mkdtempSync(join(tmpdir(), 'sealup-release-literal-'));
+      try {
+        const root = join(temp, 'project');
+        mkdirSync(root);
+        project(root);
+        // All shell effects, including the deliberately harmless commands, stay in this fixture.
+        const name =
+          process.platform === 'win32'
+            ? "out spaces ' & ^ ( ) ; $ %SEALUP_OUT% ! `"
+            : "out spaces ' & ; $SEALUP_OUT $(touch sentinel) `touch sentinel-backtick`";
+        const out = join(temp, name);
+        const notes = join(temp, 'notes.md');
+        const args = [script, out, '--root', root, '--notes', notes];
+        const env: NodeJS.ProcessEnv = {
+          npm_execpath: undefined,
+          SEALUP_OUT:
+            process.platform === 'win32'
+              ? 'expanded" & echo expanded>sentinel & rem "'
+              : 'expanded',
+        };
+        // CI calls node directly: inherited npm_execpath must not mask CLI discovery.
+        let result: GateRun;
+        if (mode === 'direct node') {
+          result = await runNode(args, root, undefined, env);
+        } else {
+          // npm supplies npm_execpath itself. Only fixed command text crosses its script shell.
+          const npm = npmCliPath();
+          const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+          pkg.scripts = { release: 'node run-release.mjs' };
+          writeFileSync(join(root, 'package.json'), JSON.stringify(pkg));
+          writeFileSync(
+            join(root, 'run-release.mjs'),
+            "import { execFileSync } from 'node:child_process';\n" +
+              `execFileSync(process.execPath, ${JSON.stringify(args)}, { stdio: 'inherit' });\n`,
+          );
+          result = await runNode([npm, 'run', 'release'], root, undefined, env);
+        }
+        expect(existsSync(join(root, 'sentinel')), result.output).toBe(false);
+        expect(existsSync(join(root, 'sentinel-backtick')), result.output).toBe(false);
+        expect(result.exitCode, result.output).toBe(0);
+        expect(readdirSync(out).sort()).toEqual(['SHA256SUMS', 'action.mjs', 'sealup-1.2.3.tgz']);
+        expect(readdirSync(temp).sort()).toEqual([name, 'notes.md', 'project'].sort());
+      } finally {
+        rmSync(temp, { recursive: true, force: true });
+      }
+    },
+  );
+});
 
 describe('the release assets', () => {
   let temp = '';

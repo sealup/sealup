@@ -99,3 +99,4 @@ sealup deploy production --json  # one JSON object on stdout
 
 - [Exit codes](/exit-codes/): did the server change? The exit code says.
 - [`sealup.yml`](/config/): `upload`, `exclude`, `write` and the other keys.
+- [Recovering a deployment](/recovery/): restore the app while preserving runtime data.

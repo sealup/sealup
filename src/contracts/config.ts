@@ -70,6 +70,8 @@ export interface Mapping {
    * folder holds that is not in the build. Absent otherwise (`--mirror` turns it on for a run).
    */
   readonly mirror?: true;
+  /** Patterns relative to this source folder: never sent or deleted by this mapping. */
+  readonly exclude?: readonly string[];
 }
 
 /**
@@ -367,6 +369,10 @@ export type ConfigExpected =
   | 'target-name'
   | 'allow'
   | 'patterns'
+  /** Mapping exclusions are meaningful on source folders only. */
+  | 'folder-exclude'
+  /** At least one upload, write or pull entry. */
+  | 'operations'
   /** `write`: server paths with their secrets. */
   | 'write'
   /** One `write` entry: `${VAR}`, or the long form. */

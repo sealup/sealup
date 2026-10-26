@@ -57,6 +57,8 @@ export type Problem =
         | 'bad-server-address'
         /** `init --from` (or the conversion offered): `name`, the file, is not sam-sync's JSON. */
         | 'not-sam-sync'
+        /** A sam-sync conversion retained no upload or pull operation. */
+        | 'sam-sync-no-actions'
         /** `init --from` and `--server` together: one way to set up at a time. */
         | 'from-and-server'
         /** A flag (`name`, as typed) that command `command` cannot honour: never ignored. */

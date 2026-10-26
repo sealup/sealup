@@ -1,8 +1,8 @@
 // The words of `sealup init` (S02, spec #24 decisions 19-21): what it found in the project, the
 // server question and its refusals, the password's line, the files written with `+`/`~`, the
 // secret to add on GitHub and the next commands; and the words of its two problems (no terminal,
-// a sealup.yml already there). The sam-sync conversion's words (S03, #37: undocumented, so only
-// shown when a sam-sync file is there): the offer, what was converted and left out, and the
+// a sealup.yml already there). The sam-sync conversion's words (S03, #37): the offer,
+// what was converted and left out, and the
 // warning to delete the old files and change the password. Pure (import rules, pure file): no
 // node: import.
 
@@ -17,6 +17,7 @@ interface InitFileShown {
   readonly change: 'added' | 'changed' | 'left';
   /** sealup.env: the variables added to it (default: the password's). */
   readonly variables?: readonly string[];
+  readonly ignored?: readonly string[];
 }
 
 /** One step of init's output, in the order cli prints them. */
@@ -86,15 +87,15 @@ export type InitStep =
         readonly scripts: readonly string[];
         readonly pull: boolean;
         readonly password: boolean;
+        readonly envFiles: readonly string[];
       };
     };
 
 /** Why an entry of the sam-sync files is not in sealup.yml (init's LeftOutReason). */
-type LeftOut = 'outside' | 'project-folder' | 'excluded' | 'twice';
+type LeftOut = 'outside' | 'project-folder' | 'twice';
 
 /** Why a secret of the sam-sync files did not go to sealup.env. */
 type NotMoved =
-  | 'missing'
   | 'no-password'
   | 'too-short'
   | 'surrounding-whitespace'
@@ -104,25 +105,26 @@ type NotMoved =
 interface ConvertedStep {
   readonly kind: 'converted';
   readonly server: string;
-  /** `local → remote`, sent as a folder or a single file; `variable`: written from it. */
-  readonly folders: readonly { readonly local: string; readonly remote: string }[];
-  readonly exclude: readonly string[];
+  /** Source folder and destination, retaining each folder's own exclusions. */
+  readonly folders: readonly {
+    readonly local: string;
+    readonly remote: string;
+    readonly exclude?: readonly string[];
+  }[];
   readonly files: readonly {
     readonly local: string;
     readonly remote: string;
-    readonly variable?: string;
   }[];
   readonly pulls: readonly {
     readonly remote: string;
     readonly local: string;
     readonly kind: 'folder' | 'file';
   }[];
-  /** Moved to sealup.env: the variable, and the local file of a file's content. */
-  readonly secrets: readonly { readonly name: string; readonly from?: string }[];
-  /** Not moved, and why: the variable, and the local file of a file's content. */
+  /** Connection secret moved to sealup.env. */
+  readonly secrets: readonly { readonly name: string }[];
+  /** Connection secret not moved, and why. */
   readonly notMoved: readonly {
     readonly name: string;
-    readonly from?: string;
     readonly reason: NotMoved;
   }[];
   readonly dropped: readonly ('verbose' | 'dry')[];
@@ -253,11 +255,10 @@ const note = (text: string): Line[] =>
 const leftOutWords: Record<LeftOut, string> = {
   outside: 'it is outside this folder, or outside the server folder.',
   'project-folder': 'sealup never sends or pulls into this whole folder (it holds sealup.env).',
-  excluded: 'its folder excludes it, and sealup never sends an excluded file.',
   twice: 'an entry before it has the same path.',
 };
 
-const notMovedWords: Record<Exclude<NotMoved, 'missing' | 'no-password'>, string> = {
+const notMovedWords: Record<Exclude<NotMoved, 'no-password'>, string> = {
   'too-short': 'it has fewer than 6 characters',
   'surrounding-whitespace': 'it starts or ends with a space',
   'forbidden-character': 'it holds a line break',
@@ -274,9 +275,7 @@ function convertedLines(step: ConvertedStep): Line[] {
     items.flatMap((item, index) => labelled(index === 0 ? label : '', [item]));
   const count = (n: number, word: string) => plural(n, word);
   const fileItem = (file: ConvertedStep['files'][number], renamed: boolean): string =>
-    `${renamed ? `${file.local} → ${file.remote}` : file.local}${
-      file.variable === undefined ? '' : `, now written from $\{${file.variable}}`
-    }`;
+    renamed ? `${file.local} → ${file.remote}` : file.local;
   const renamed = step.files.filter((file) => file.local !== file.remote);
   const same = step.files.filter((file) => file.local === file.remote);
   const pullFolders = step.pulls.filter((pull) => pull.kind === 'folder');
@@ -293,9 +292,11 @@ function convertedLines(step: ConvertedStep): Line[] {
           count(step.folders.length, 'folder'),
           step.folders.map(({ local, remote }) => `${local} → ${remote}`),
         )),
-    ...(step.exclude.length === 0
-      ? []
-      : labelled(count(step.exclude.length, 'exclude'), step.exclude)),
+    ...step.folders.flatMap(({ local, remote, exclude }) =>
+      exclude === undefined || exclude.length === 0
+        ? []
+        : labelled(`excludes`, [`${local} → ${remote}: ${exclude.join(', ')}`]),
+    ),
     ...each(
       count(renamed.length, 'renamed file'),
       renamed.map((file) => fileItem(file, true)),
@@ -315,9 +316,7 @@ function convertedLines(step: ConvertedStep): Line[] {
       : [
           ...labelled(
             count(step.secrets.length, 'secret'),
-            step.secrets.map(
-              ({ name, from }) => `${name} (${from === undefined ? 'the password' : from})`,
-            ),
+            step.secrets.map(({ name }) => `${name} (the password)`),
           ),
           [' '.repeat(20), style(`${moved} to sealup.env, never written in sealup.yml`, 'dim')],
         ]),
@@ -343,15 +342,12 @@ function convertedLines(step: ConvertedStep): Line[] {
   for (const { from, to, reason } of step.leftOut) {
     lines.push(...note(`Left out: ${from} → ${to}: ${leftOutWords[reason]}`));
   }
-  for (const { name, from, reason } of step.notMoved) {
-    const what = from === undefined ? 'the password' : from;
+  for (const { name, reason } of step.notMoved) {
     lines.push(
       ...note(
-        reason === 'missing'
-          ? `${name}: ${what} is not here. Put its content in sealup.env as ${name}.`
-          : reason === 'no-password'
-            ? `The sam-sync files hold no password: add ${name} to sealup.env.`
-            : `${name}: sealup.env cannot hold ${what} (${notMovedWords[reason]}). Add it by hand.`,
+        reason === 'no-password'
+          ? `The sam-sync files hold no password: add ${name} to sealup.env.`
+          : `${name}: sealup.env cannot hold the password (${notMovedWords[reason]}). Add it by hand.`,
       ),
     );
   }
@@ -386,8 +382,10 @@ function doneLines(step: Extract<InitStep, { kind: 'done' }>): Line[] {
         const added = (file.variables ?? [secret]).join(', ');
         return file.change === 'added' ? `${added} (git-ignored)` : `added ${added}`;
       }
-      case 'gitignore':
-        return file.change === 'added' ? 'with the line sealup.env' : 'added the line sealup.env';
+      case 'gitignore': {
+        const ignored = file.ignored ?? ['sealup.env'];
+        return `${file.change === 'added' ? 'with' : 'added'} ${ignored.length === 1 ? 'the line' : `${ignored.length} lines`} ${ignored.join(', ')}`;
+      }
       case 'workflow':
         return step.build ? 'on push to main: build, then deploy' : 'on push to main: deploy';
     }
@@ -421,6 +419,11 @@ function doneLines(step: Extract<InitStep, { kind: 'done' }>): Line[] {
           `package.json still calls sam-sync in ${and(samSync.scripts)}: change ${
             samSync.scripts.length === 1 ? 'it' : 'them'
           } to sealup deploy${samSync.pull ? ' and sealup pull' : ''}.`,
+        )),
+    ...(samSync === undefined || samSync.envFiles.length === 0
+      ? []
+      : note(
+          'Application env files remain local uploads. Make them available on CI before sealup deploy.',
         )),
     [],
     secrets.length === 1

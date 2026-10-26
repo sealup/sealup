@@ -22,7 +22,13 @@ concurrency:
 jobs:
   check:
     name: check (${{ matrix.os }}, Node ${{ matrix.node }})
-    runs-on: ${{ matrix.os }}
+    # Enable the private-repo trial only after the Blacksmith GitHub App is installed.
+    # Public exports keep GitHub runners; removing the variable restores the original runner.
+    runs-on: >-
+      ${{ github.repository == 'sealup/sealup-private'
+      && vars.BLACKSMITH_ENABLED == 'true'
+      && 'blacksmith-2vcpu-ubuntu-2404'
+      || matrix.os }}
     timeout-minutes: 10
     strategy:
       fail-fast: false
@@ -191,7 +197,11 @@ jobs:
   # public repo runs it whole.
   release-dry-run:
     name: release dry run (export, public commit and checks, release build)
-    runs-on: ubuntu-latest
+    runs-on: >-
+      ${{ github.repository == 'sealup/sealup-private'
+      && vars.BLACKSMITH_ENABLED == 'true'
+      && 'blacksmith-2vcpu-ubuntu-2404'
+      || 'ubuntu-latest' }}
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

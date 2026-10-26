@@ -221,7 +221,7 @@ export async function loadConfig(
       // Tune keys: the target's own wins. Lists: the target's own are added (ticket 06).
       const lists: Lists = {
         uploads: [
-          [shared.upload, ['upload']],
+          ...(shared.upload === undefined ? [] : [[shared.upload, ['upload']] as const]),
           ...(input.upload === undefined
             ? []
             : [[input.upload, ['targets', name, 'upload']] as const]),

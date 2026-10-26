@@ -278,6 +278,13 @@ export async function resolveTarget(
   const exclude = patterns.map(([pattern]) => pattern);
   const writes = resolveWrites(lists.writes, issues, { fill, ...context });
   const pulls = resolvePulls(lists.pulls, issues, { fill, ...context });
+  if (issues.length === 0 && uploads.length + writes.length + pulls.length === 0) {
+    issues.push({
+      code: 'missing-key',
+      ...context.place([...pathOf('server').slice(0, -1), 'upload']),
+      expected: 'operations',
+    });
+  }
   for (const mapping of uploads) {
     const pattern = mapping.kind === 'file' ? excludedBy(mapping, patterns) : undefined;
     if (pattern !== undefined) {
@@ -379,16 +386,38 @@ async function resolveUploads(
   issues: ConfigIssue[],
   context: Context,
 ): Promise<Mapping[]> {
-  const entries: [local: string, remote: string | undefined, path: Path, mirror: boolean][] =
+  const entries: [
+    local: string,
+    remote: string | undefined,
+    path: Path,
+    mirror: boolean,
+    exclude: readonly string[] | undefined,
+  ][] =
     typeof upload === 'string'
-      ? [[upload, '', path, false]]
-      : Object.entries(upload).map(([local, entry]) => {
-          const to = typeof entry === 'string' ? entry : entry.to;
-          const mirror = typeof entry !== 'string' && entry.mirror === true;
-          return [local, fill(to, [...path, local]), [...path, local], mirror];
-        });
+      ? [[upload, '', path, false, undefined]]
+      : Object.entries(upload).flatMap(([local, value]) =>
+          (Array.isArray(value) ? value : [value]).map((entry, index) => {
+            const at = Array.isArray(value) ? [...path, local, index] : [...path, local];
+            const to = typeof entry === 'string' ? entry : entry.to;
+            const mirror = typeof entry !== 'string' && entry.mirror === true;
+            const exclude =
+              typeof entry === 'string'
+                ? undefined
+                : entry.exclude?.flatMap((text, index) => {
+                    const pattern = fill(text, [...at, 'exclude', index]);
+                    return pattern === undefined ? [] : [pattern];
+                  });
+            return [local, fill(to, at), at, mirror, exclude] as [
+              string,
+              string | undefined,
+              Path,
+              boolean,
+              readonly string[] | undefined,
+            ];
+          }),
+        );
   const mappings: Mapping[] = [];
-  for (const [localText, remoteText, at, mirror] of entries) {
+  for (const [localText, remoteText, at, mirror, exclude] of entries) {
     const local = typeof upload === 'string' ? fill(localText, at) : localText;
     if (local === undefined || remoteText === undefined) continue;
     const place = context.place(at);
@@ -398,6 +427,14 @@ async function resolveUploads(
     }
     const abs = resolve(context.folder, local);
     const kind = (await isFile(abs)) ? 'file' : 'folder';
+    if (kind === 'file' && exclude !== undefined) {
+      issues.push({
+        code: 'wrong-type',
+        ...context.place([...at, 'exclude']),
+        expected: 'folder-exclude',
+      });
+      continue;
+    }
     // A folder goes to a folder (`.` is the target folder); a file to a file path inside it.
     const remote = kind === 'file' ? remoteFile(remoteText) : remoteFolder(remoteText);
     if (remote === undefined) {
@@ -417,6 +454,7 @@ async function resolveUploads(
       localFromConfig,
       place,
       ...(mirror ? { mirror: true } : {}),
+      ...(exclude === undefined ? {} : { exclude }),
     });
   }
   return mappings;

@@ -75,25 +75,72 @@
               "additionalProperties": {
                 "anyOf": [
                   {
-                    "type": "string",
-                    "description": "Server folder (. is the target folder), or file path for a single file"
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "to": {
+                    "anyOf": [
+                      {
                         "type": "string",
                         "description": "Server folder (. is the target folder), or file path for a single file"
                       },
-                      "mirror": {
-                        "type": "boolean",
-                        "description": "Also delete server files sealup did not upload (minus excludes)"
+                      {
+                        "type": "object",
+                        "properties": {
+                          "to": {
+                            "type": "string",
+                            "description": "Server folder (. is the target folder), or file path for a single file"
+                          },
+                          "mirror": {
+                            "type": "boolean",
+                            "description": "Also delete server files sealup did not upload (minus excludes)"
+                          },
+                          "exclude": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "Patterns relative to this source folder: never sent or deleted"
+                          }
+                        },
+                        "required": [
+                          "to"
+                        ],
+                        "additionalProperties": false
                       }
-                    },
-                    "required": [
-                      "to"
-                    ],
-                    "additionalProperties": false
+                    ]
+                  },
+                  {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "description": "Server folder (. is the target folder), or file path for a single file"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "to": {
+                              "type": "string",
+                              "description": "Server folder (. is the target folder), or file path for a single file"
+                            },
+                            "mirror": {
+                              "type": "boolean",
+                              "description": "Also delete server files sealup did not upload (minus excludes)"
+                            },
+                            "exclude": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "Patterns relative to this source folder: never sent or deleted"
+                            }
+                          },
+                          "required": [
+                            "to"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
                   }
                 ]
               }
@@ -211,25 +258,72 @@
               "additionalProperties": {
                 "anyOf": [
                   {
-                    "type": "string",
-                    "description": "Server folder (. is the target folder), or file path for a single file"
-                  },
-                  {
-                    "type": "object",
-                    "properties": {
-                      "to": {
+                    "anyOf": [
+                      {
                         "type": "string",
                         "description": "Server folder (. is the target folder), or file path for a single file"
                       },
-                      "mirror": {
-                        "type": "boolean",
-                        "description": "Also delete server files sealup did not upload (minus excludes)"
+                      {
+                        "type": "object",
+                        "properties": {
+                          "to": {
+                            "type": "string",
+                            "description": "Server folder (. is the target folder), or file path for a single file"
+                          },
+                          "mirror": {
+                            "type": "boolean",
+                            "description": "Also delete server files sealup did not upload (minus excludes)"
+                          },
+                          "exclude": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            },
+                            "description": "Patterns relative to this source folder: never sent or deleted"
+                          }
+                        },
+                        "required": [
+                          "to"
+                        ],
+                        "additionalProperties": false
                       }
-                    },
-                    "required": [
-                      "to"
-                    ],
-                    "additionalProperties": false
+                    ]
+                  },
+                  {
+                    "minItems": 1,
+                    "type": "array",
+                    "items": {
+                      "anyOf": [
+                        {
+                          "type": "string",
+                          "description": "Server folder (. is the target folder), or file path for a single file"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "to": {
+                              "type": "string",
+                              "description": "Server folder (. is the target folder), or file path for a single file"
+                            },
+                            "mirror": {
+                              "type": "boolean",
+                              "description": "Also delete server files sealup did not upload (minus excludes)"
+                            },
+                            "exclude": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              },
+                              "description": "Patterns relative to this source folder: never sent or deleted"
+                            }
+                          },
+                          "required": [
+                            "to"
+                          ],
+                          "additionalProperties": false
+                        }
+                      ]
+                    }
                   }
                 ]
               }
@@ -371,25 +465,72 @@
                     "additionalProperties": {
                       "anyOf": [
                         {
-                          "type": "string",
-                          "description": "Server folder (. is the target folder), or file path for a single file"
-                        },
-                        {
-                          "type": "object",
-                          "properties": {
-                            "to": {
+                          "anyOf": [
+                            {
                               "type": "string",
                               "description": "Server folder (. is the target folder), or file path for a single file"
                             },
-                            "mirror": {
-                              "type": "boolean",
-                              "description": "Also delete server files sealup did not upload (minus excludes)"
+                            {
+                              "type": "object",
+                              "properties": {
+                                "to": {
+                                  "type": "string",
+                                  "description": "Server folder (. is the target folder), or file path for a single file"
+                                },
+                                "mirror": {
+                                  "type": "boolean",
+                                  "description": "Also delete server files sealup did not upload (minus excludes)"
+                                },
+                                "exclude": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string"
+                                  },
+                                  "description": "Patterns relative to this source folder: never sent or deleted"
+                                }
+                              },
+                              "required": [
+                                "to"
+                              ],
+                              "additionalProperties": false
                             }
-                          },
-                          "required": [
-                            "to"
-                          ],
-                          "additionalProperties": false
+                          ]
+                        },
+                        {
+                          "minItems": 1,
+                          "type": "array",
+                          "items": {
+                            "anyOf": [
+                              {
+                                "type": "string",
+                                "description": "Server folder (. is the target folder), or file path for a single file"
+                              },
+                              {
+                                "type": "object",
+                                "properties": {
+                                  "to": {
+                                    "type": "string",
+                                    "description": "Server folder (. is the target folder), or file path for a single file"
+                                  },
+                                  "mirror": {
+                                    "type": "boolean",
+                                    "description": "Also delete server files sealup did not upload (minus excludes)"
+                                  },
+                                  "exclude": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string"
+                                    },
+                                    "description": "Patterns relative to this source folder: never sent or deleted"
+                                  }
+                                },
+                                "required": [
+                                  "to"
+                                ],
+                                "additionalProperties": false
+                              }
+                            ]
+                          }
                         }
                       ]
                     }
@@ -478,7 +619,6 @@
         }
       },
       "required": [
-        "upload",
         "targets"
       ],
       "additionalProperties": false

@@ -70,9 +70,7 @@ describe('sealup help [topic]', () => {
     expect(JSON.parse(run.stdout)).toMatchObject({ command: 'help', exitCode: 2 });
   });
 
-  it('never mentions sam-sync or --from in the help of init, nor anywhere in help', async () => {
-    // The conversion is undocumented (spec #24 decision 22): it shows only to a project that
-    // has a .deployment.json, so the help is read in one.
+  it('documents sam-sync conversion in init help without offering --from on other commands', async () => {
     const root = newProject({ '.deployment.json': '{}', 'dist/index.html': 'x' });
     const runs = [
       [],
@@ -83,15 +81,22 @@ describe('sealup help [topic]', () => {
     ];
     for (const argv of runs) {
       const run = await runMain(argv, { cwd: root });
-      expect(`${run.stdout}${run.stderr}`, argv.join(' ')).not.toMatch(
-        /sam-sync|--from|deployment\.json|download\.json/,
-      );
+      const text = `${run.stdout}${run.stderr}`;
+      if (argv.includes('init')) {
+        expect(text, argv.join(' ')).toContain('--from <file>');
+        expect(text, argv.join(' ')).toContain('Convert a sam-sync deployment file');
+      } else {
+        expect(text, argv.join(' ')).not.toMatch(/sam-sync|--from/);
+      }
     }
   });
 
-  it('never names the conversion in the docs: the README, the action, the schema, the slugs', () => {
+  it('documents conversion as a CLI command, leaving legacy fields out of the action and schema', () => {
+    expect(readFileSync('site/src/content/docs/migrate-sam-sync.md', 'utf8')).toContain(
+      'sealup init --from .deployment.json',
+    );
     const pattern = /sam-sync|--from|deployment\.json|download\.json/;
-    for (const file of ['README.md', 'action.yml', 'schema.json']) {
+    for (const file of ['action.yml', 'schema.json']) {
       expect(readFileSync(file, 'utf8'), file).not.toMatch(pattern);
     }
     expect(docsSlugs.join('\n')).not.toMatch(/sam-sync|samsync|convert/);

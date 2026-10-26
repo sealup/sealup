@@ -1,6 +1,6 @@
 // What `sealup init` writes that config owns (spec #24 decision 19): the minimal sealup.yml
-// (exploration 06 §2.1, four lines; the sam-sync conversion adds its upload pairs, exclude, write
-// and pull) and the variables' lines in sealup.env. Both are read back
+// (exploration 06 §2.1, four lines; the sam-sync conversion adds its upload entries, scoped
+// excludes and pull) and the variables' lines in sealup.env. Both are read back
 // here before they are given out: the YAML by the YAML parser, the env line by the env-file
 // reader (util.parseEnv), so what init writes is exactly what a deploy reads.
 
@@ -17,6 +17,10 @@ export const passwordVariable = 'SEALUP_PASSWORD';
 export const serverVariable = 'SEALUP_SERVER';
 export const hostKeyVariable = 'SEALUP_HOST_KEY';
 
+type UploadDestination =
+  | string
+  | { readonly to: string; readonly mirror?: boolean; readonly exclude?: readonly string[] };
+
 /** What a new sealup.yml holds: one target, the shorthand. */
 export interface NewConfig {
   readonly server: string;
@@ -27,7 +31,12 @@ export interface NewConfig {
    */
   readonly publicRepo?: boolean;
   /** One folder (`upload: dist`), or `local: remote` pairs. */
-  readonly upload: string | readonly (readonly [local: string, remote: string])[];
+  readonly upload:
+    | string
+    | readonly (readonly [
+        local: string,
+        remote: UploadDestination | readonly UploadDestination[],
+      ])[];
   readonly exclude?: readonly string[];
   /** `remote: ${VARIABLE}` pairs: files written from a secret. */
   readonly write?: readonly (readonly [remote: string, variable: string])[];
@@ -61,10 +70,9 @@ export function newConfigText(facts: NewConfig): string {
     ...(hostKey !== undefined ? [`hostKey: ${scalar(hostKey)}`] : ftp ? [] : [hostKeyPlaceholder]),
     ...(typeof facts.upload === 'string'
       ? [`upload: ${scalar(facts.upload)}`]
-      : pairs(
-          'upload',
-          facts.upload.map(([local, remote]) => [local, scalar(remote)]),
-        )),
+      : facts.upload.length === 0
+        ? ['upload: {}']
+        : [stringify({ upload: Object.fromEntries(facts.upload) }, { lineWidth: 0 }).trimEnd()]),
     ...(exclude.length === 0
       ? []
       : ['exclude:', ...exclude.map((pattern) => `  - ${scalar(pattern)}`)]),
@@ -128,8 +136,8 @@ type EnvEdit =
 const envValues = new WeakMap<Secret, string>();
 
 /**
- * A value bound for sealup.env (init: a password typed or found in a sam-sync file, a secret
- * file's content), made a Secret the moment it is read: from then on redaction and GitHub's
+ * A value bound for sealup.env (a password typed or found in a sam-sync file, or a CI-provided
+ * file secret), made a Secret the moment it is read: from then on redaction and GitHub's
  * masks know it (R1, R2). Checked as a password is, or with `kind: 'file'` as a file's content
  * written from a secret (line breaks allowed, R17), and refused when no line of an env file can
  * hold it.

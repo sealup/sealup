@@ -24,7 +24,6 @@ import { hostKeyLine, newProject, ref, runMain } from '../../deploy-kit.ts';
 import { samSyncProject } from '../../sam-sync-kit.ts';
 
 const password = canaries.SEALUP_CANARY_PASSWORD;
-const appEnv = canaries.SEALUP_CANARY_MULTILINE;
 
 /** The screen up to the public question's answer (0045): `y` or `n`. */
 const s03Questions = (publicAnswer: 'y' | 'n') => [
@@ -34,11 +33,12 @@ const s03Questions = (publicAnswer: 'y' | 'n') => [
   '  Converted:',
   '    server          sftp://deploy@ssh.example.com/home/site',
   '    2 folders       public_html → www, api → api',
-  '    4 excludes      public_html/resources, api/.env, api/.env.prod, api/storage',
-  `    1 renamed file  api/.env.prod → api/.env, now written from $\{APP_ENV}`,
+  '    excludes        public_html → www: /resources',
+  '    excludes        api → api: /.env, /.env.prod, /storage',
+  '    1 renamed file  api/.env.prod → api/.env',
   '    1 pull folder   www/resources → public_html/resources',
-  '    2 secrets       SEALUP_PASSWORD (the password), APP_ENV (api/.env.prod)',
-  '                    {d}both moved to sealup.env, never written in sealup.yml{/}',
+  '    1 secret        SEALUP_PASSWORD (the password)',
+  '                    {d}moved to sealup.env, never written in sealup.yml{/}',
   '  {d}Not needed any more: verbose and dry (use -v and --dry-run).{/}',
   '  {d}.download.json used the same server, so it became the pull: section.{/}',
   '',
@@ -73,13 +73,15 @@ const s03End = [
 
 const s03 = [
   ...s03Questions('n'),
-  '    {g}+{/} sealup.env                     SEALUP_PASSWORD, APP_ENV (git-ignored)',
-  '    ~ .gitignore                     added the line sealup.env',
+  '    {g}+{/} sealup.env                     SEALUP_PASSWORD (git-ignored)',
+  '    ~ .gitignore                     added 2 lines sealup.env, api/.env.prod',
   '    {g}+{/} .github/workflows/deploy.yml   on push to main: build, then deploy',
   '  {d}package.json still calls sam-sync in deploy and download: change them to{/}',
   '  {d}sealup deploy and sealup pull.{/}',
+  '  {d}Application env files remain local uploads. Make them available on CI before{/}',
+  '  {d}sealup deploy.{/}',
   '',
-  '  On GitHub, add the secrets {b}SEALUP_PASSWORD{/} and {b}APP_ENV{/}:',
+  '  On GitHub, add the secret {b}SEALUP_PASSWORD{/} with the same password:',
   '  {d}Settings › Secrets and variables › Actions › New repository secret{/}',
   '',
   ...s03End,
@@ -88,13 +90,15 @@ const s03 = [
 /** A public repository (0045): the same question as S02, with the same result. */
 const s03Public = [
   ...s03Questions('y'),
-  '    {g}+{/} sealup.env                     SEALUP_PASSWORD, APP_ENV, SEALUP_SERVER, SEALUP_HOST_KEY (git-ignored)',
-  '    ~ .gitignore                     added the line sealup.env',
+  '    {g}+{/} sealup.env                     SEALUP_PASSWORD, SEALUP_SERVER, SEALUP_HOST_KEY (git-ignored)',
+  '    ~ .gitignore                     added 2 lines sealup.env, api/.env.prod',
   '    {g}+{/} .github/workflows/deploy.yml   on push to main: build, then deploy',
   '  {d}package.json still calls sam-sync in deploy and download: change them to{/}',
   '  {d}sealup deploy and sealup pull.{/}',
+  '  {d}Application env files remain local uploads. Make them available on CI before{/}',
+  '  {d}sealup deploy.{/}',
   '',
-  '  On GitHub, add the secrets {b}SEALUP_PASSWORD{/}, {b}APP_ENV{/}, {b}SEALUP_SERVER{/} and {b}SEALUP_HOST_KEY{/}:',
+  '  On GitHub, add the secrets {b}SEALUP_PASSWORD{/}, {b}SEALUP_SERVER{/} and {b}SEALUP_HOST_KEY{/}:',
   '  {d}Settings › Secrets and variables › Actions › New repository secret{/}',
   '  {d}Copy each value from sealup.env.{/}',
   '',
@@ -122,15 +126,17 @@ describe('S03: convert a sam-sync project', () => {
         `password: ${ref('SEALUP_PASSWORD')}`,
         `hostKey: ${hostKeyLine}`,
         'upload:',
-        '  public_html: www',
-        '  api: api',
-        'exclude:',
-        '  - public_html/resources',
-        '  - api/.env',
-        '  - api/.env.prod',
-        '  - api/storage',
-        'write:',
-        `  api/.env: ${ref('APP_ENV')}`,
+        '  public_html:',
+        '    to: www',
+        '    exclude:',
+        '      - /resources',
+        '  api:',
+        '    to: api',
+        '    exclude:',
+        '      - /.env',
+        '      - /.env.prod',
+        '      - /storage',
+        '  api/.env.prod: api/.env',
         'pull:',
         '  www/resources: public_html/resources',
         '',
@@ -138,16 +144,10 @@ describe('S03: convert a sam-sync project', () => {
     );
     expect(parseEnv(readFileSync(join(root, 'sealup.env'), 'utf8'))).toEqual({
       SEALUP_PASSWORD: password,
-      APP_ENV: appEnv,
     });
     const workflow = readFileSync(join(root, '.github', 'workflows', 'deploy.yml'), 'utf8');
     expect(workflow).toContain(
-      [
-        '        env:',
-        `          SEALUP_PASSWORD: $\{{ secrets.SEALUP_PASSWORD }}`,
-        `          APP_ENV: $\{{ secrets.APP_ENV }}`,
-        '',
-      ].join('\n'),
+      ['        env:', `          SEALUP_PASSWORD: $\{{ secrets.SEALUP_PASSWORD }}`, ''].join('\n'),
     );
     // init deletes nothing and edits no script: the old files are the person's to remove.
     for (const [path, content] of Object.entries(samSyncProject())) {
@@ -175,13 +175,12 @@ describe('S03: convert a sam-sync project', () => {
     ]);
     expect(parseEnv(readFileSync(join(root, 'sealup.env'), 'utf8'))).toEqual({
       SEALUP_PASSWORD: password,
-      APP_ENV: appEnv,
       SEALUP_SERVER: 'sftp://deploy@ssh.example.com/home/site',
       SEALUP_HOST_KEY: hostKeyLine,
     });
     const workflow = readFileSync(join(root, '.github', 'workflows', 'deploy.yml'), 'utf8');
     expect(workflow).toContain(
-      ['SEALUP_PASSWORD', 'APP_ENV', 'SEALUP_SERVER', 'SEALUP_HOST_KEY']
+      ['SEALUP_PASSWORD', 'SEALUP_SERVER', 'SEALUP_HOST_KEY']
         .map((name) => `          ${name}: $\{{ secrets.${name} }}\n`)
         .join(''),
     );

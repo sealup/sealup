@@ -270,7 +270,7 @@ describe('issue forms and the PR template', () => {
 describe('Scorecard (I-045)', () => {
   const workflow = yamlOf('.github/workflows/scorecard.yml') as {
     on: { schedule?: readonly { cron: string }[] };
-    jobs: Record<string, { steps: readonly { uses?: string }[] }>;
+    jobs: Record<string, { if?: string; steps: readonly { uses?: string }[] }>;
   };
 
   it('runs every week, on a cron of one day of the week', () => {
@@ -285,5 +285,13 @@ describe('Scorecard (I-045)', () => {
   it("runs OpenSSF's Scorecard action", () => {
     const uses = Object.values(workflow.jobs).flatMap((job) => job.steps.map((s) => s.uses));
     expect(uses.some((step) => step?.startsWith('ossf/scorecard-action@'))).toBe(true);
+  });
+
+  // The private repo's GITHUB_TOKEN cannot run Scorecard's GraphQL commit query, and a
+  // private repo cannot publish; only the public repo's results feed the badge.
+  it('runs only in the public repo', () => {
+    for (const job of Object.values(workflow.jobs)) {
+      expect(job.if).toBe("github.repository == 'sealup/sealup'");
+    }
   });
 });

@@ -176,6 +176,7 @@ export interface Mapping {
     readonly localFromConfig: string;
     readonly place: ConfigPlace;
     readonly mirror?: true;
+    readonly exclude?: readonly string[];
 }
 export interface SecretFile {
     readonly path: RemotePath;
@@ -259,7 +260,7 @@ export interface ConfigIssue extends ConfigPlace {
 }
 export declare const maxFtpConnections = 16;
 export declare function isFtp(protocol: ServerUrl['protocol']): boolean;
-export type ConfigExpected = 'mapping' | 'text' | 'count' | 'connections' | 'fingerprint' | 'duration' | 'upload' | 'upload-entry' | 'targets' | 'target' | 'target-name' | 'allow' | 'patterns' | 'write' | 'write-entry' | 'mode' | 'yes-no' | 'pull';
+export type ConfigExpected = 'mapping' | 'text' | 'count' | 'connections' | 'fingerprint' | 'duration' | 'upload' | 'upload-entry' | 'targets' | 'target' | 'target-name' | 'allow' | 'patterns' | 'folder-exclude' | 'operations' | 'write' | 'write-entry' | 'mode' | 'yes-no' | 'pull';
 export {};
 
 // src/contracts/plan.ts
@@ -381,7 +382,7 @@ import type { ManifestProblem, Plan } from './plan.ts';
 import type { CertificateScan, HostKeyId, ScannedHostKey, ServerCertificate, TransportError, TransportErrorCode } from './session.ts';
 export type Problem = {
     readonly code: 'usage';
-    readonly reason: 'no-command' | 'unknown-command' | 'extra-arguments' | 'unknown-flag' | 'missing-value' | 'quiet-and-verbose' | 'json-not-taken' | 'unknown-topic' | 'outside-workspace' | 'no-workspace' | 'not-true-or-false' | 'bad-server-address' | 'not-sam-sync' | 'from-and-server' | 'flag-not-taken';
+    readonly reason: 'no-command' | 'unknown-command' | 'extra-arguments' | 'unknown-flag' | 'missing-value' | 'quiet-and-verbose' | 'json-not-taken' | 'unknown-topic' | 'outside-workspace' | 'no-workspace' | 'not-true-or-false' | 'bad-server-address' | 'not-sam-sync' | 'sam-sync-no-actions' | 'from-and-server' | 'flag-not-taken';
     readonly name?: string;
     readonly count?: number;
     readonly suggestion?: string;
@@ -779,6 +780,7 @@ export declare function publicWrite(targetFolder: string, writes: readonly Secre
 export declare function excludedOnServer(mappings: readonly Mapping[], patterns: readonly string[]): (path: RemotePath, folder?: boolean) => boolean;
 export interface SentPath {
     readonly path: RemotePath;
+    readonly entry: object;
     readonly place: ConfigPlace;
 }
 export declare function sameServerPath(sent: Iterable<SentPath>): ConfigIssue | undefined;

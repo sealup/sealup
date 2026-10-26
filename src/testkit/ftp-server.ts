@@ -54,6 +54,10 @@ interface FtpServerOptions {
   readonly mlstFollowsLinks?: boolean;
   /** APPE is taken. Default true; false answers 451, as ProFTPD without AllowStoreRestart. */
   readonly append?: boolean;
+  /** APPE preserves the file's permissions; false adds other-read before receiving bytes. */
+  readonly appendKeepsMode?: boolean | ((path: string) => boolean);
+  /** A nonempty append can reset modes even where an empty append keeps them. */
+  readonly appendContentKeepsMode?: (path: string) => boolean;
   /**
    * STOR onto an existing file keeps that file and its mode. Default true; false makes a new file
    * (mode 0644), as a server that writes to a hidden name and renames it into place.
@@ -349,8 +353,25 @@ export async function createFtpServer(options: FtpServerOptions = {}): Promise<F
       if (verb === 'STOR' || entry === undefined) {
         entries.set(path, writtenFile(storeKeepsMode ? entry : undefined, new Uint8Array()));
       }
+      if (
+        verb === 'APPE' &&
+        entry?.kind === 'file' &&
+        (typeof options.appendKeepsMode === 'function'
+          ? !options.appendKeepsMode(path)
+          : options.appendKeepsMode === false)
+      ) {
+        entries.set(path, { ...entry, mode: entry.mode | 0o004 });
+      }
       await reply('150 Ok to send data.');
       const received = await receive(data);
+      if (
+        verb === 'APPE' &&
+        received.length > 0 &&
+        options.appendContentKeepsMode?.(path) === false
+      ) {
+        const current = entries.get(path);
+        if (current?.kind === 'file') entries.set(path, { ...current, mode: current.mode | 0o004 });
+      }
       const before = entries.get(path);
       if (before?.kind !== 'file') return reply('451 File vanished.');
       const bytes = new Uint8Array(before.bytes.length + received.length);

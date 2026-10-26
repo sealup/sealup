@@ -39,11 +39,11 @@ write:
 ```text
   ✗ ftp.example.com cannot set file permissions: sealup stopped.
     write.api/.env (line 3) writes /site/api/.env from a secret: it must get
-    its file mode before its first byte, and the server refused SITE CHMOD.
+    its file mode before its first byte, and the server cannot preserve it.
     Deploy it over sftp:// instead, or remove that entry.
 
     Nothing was changed on production.
     More: sealup.dev/e/secret-file-public
 ```
 
-A file written from a secret gets its mode (`0600` unless the entry says otherwise) before any of its content arrives, so it is never readable by others, not even for a moment. Over FTP that takes `SITE CHMOD`. sealup tries it once after login; when the server refuses it, a deploy with `write:` entries stops there, before any change. Deploy over `sftp://` (most hosts offer it), or remove the `write:` entry and put the file in place another way.
+A file written from a secret gets its mode (`0600` unless the entry says otherwise) before any of its content arrives, so it is never readable by others, not even for a moment. Over FTP that takes `SITE CHMOD` and an upload that preserves the mode. Some servers accept the command but restore read access for others when a file is uploaded. sealup checks the resulting permissions with a temporary probe after login; when it cannot preserve them, a deploy with `write:` entries stops before changing the target. Deploy over `sftp://` (most hosts offer it), or remove the `write:` entry and put the file in place another way.

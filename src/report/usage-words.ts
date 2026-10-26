@@ -38,6 +38,8 @@ export function usageTitle(problem: Extract<Problem, { code: 'usage' }>): string
       return `The address given to ${name ?? '--server'} is not one sealup can use.`;
     case 'not-sam-sync':
       return `sealup cannot read ${name ?? 'the file'} as a sam-sync config.`;
+    case 'sam-sync-no-actions':
+      return `${name ?? 'This sam-sync config'} has no upload or pull entries sealup can convert.`;
     case 'from-and-server':
       return '--from and --server cannot be used together.';
     case 'flag-not-taken':
@@ -68,6 +70,10 @@ export function usageDetails(problem: Extract<Problem, { code: 'usage' }>): stri
       ];
     case 'not-sam-sync':
       return ['It must be JSON with host and user, and up and down as sam-sync writes them.'];
+    case 'sam-sync-no-actions':
+      return [
+        'Add an upload or pull entry inside the project and target folders, then run init again.',
+      ];
     case 'from-and-server':
       return ['--from converts a sam-sync config; --server starts from an address.'];
     case 'flag-not-taken':

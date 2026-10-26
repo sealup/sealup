@@ -358,7 +358,7 @@ export function explain(
           title: `${target?.server.host ?? 'The server'} cannot set file permissions: sealup stopped.`,
           details: [
             `${place.keyPath}${line} writes ${problem.path} from a secret: it must get`,
-            'its file mode before its first byte, and the server refused SITE CHMOD.',
+            'its file mode before its first byte, and the server cannot preserve it.',
             'Deploy it over sftp:// instead, or remove that entry.',
           ],
           state: [nothing],

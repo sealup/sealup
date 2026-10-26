@@ -117,7 +117,7 @@ describe('envSecret and withEnvVariable: the password into sealup.env', () => {
     expect(kept).toEqual({ ok: true, added: false, text: 'SEALUP_SERVER=sftp://a@b/c\n' });
   });
 
-  it("writes a file's content (the sam-sync conversion's .env) so the reader gives it back", () => {
+  it('writes a CI-provided file secret so the reader gives it back', () => {
     const content = 'APP_NAME="My App"\nAPP_KEY=base64:c2VjcmV0\nDB_PASSWORD=\'p#w\'\n';
     const edit = withEnv('SEALUP_PASSWORD=secret-pw\n', 'APP_ENV', content, 'file');
     expect(edit).toMatchObject({ ok: true, added: true });

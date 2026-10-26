@@ -13,7 +13,7 @@ interface Group {
 export const sidebar: Group[] = [
   {
     label: 'Start here',
-    items: ['getting-started', 'ovh'],
+    items: ['getting-started', 'ovh', 'migrate-sam-sync'],
   },
   {
     label: 'Protocols',
@@ -21,7 +21,7 @@ export const sidebar: Group[] = [
   },
   {
     label: 'Deploys',
-    items: ['mirror', 'write', 'check-server', 'lock', 'allow', 'github-action'],
+    items: ['mirror', 'write', 'check-server', 'recovery', 'lock', 'allow', 'github-action'],
   },
   {
     label: 'Commands',

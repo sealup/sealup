@@ -1196,6 +1196,17 @@ footer .bottom {
   font: 400 13px/1.5 var(--f-mono);
   color: rgba(250, 246, 242, 0.6);
 }
+footer .maker {
+  margin: 8px 0 0;
+}
+footer .maker a {
+  color: rgba(250, 246, 242, 0.8);
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+footer .maker a:hover {
+  color: #fff;
+}
 @media (max-width: 640px) {
   footer .top,
   footer .bottom,

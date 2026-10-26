@@ -96,6 +96,7 @@ export async function scanLocal(
   const emptySources: EmptySource[] = [];
   const symlinks: string[] = [];
   for (const mapping of mappings) {
+    const scopedExcluded = excludeMatcher(mapping.exclude ?? []);
     if (mapping.kind === 'file') {
       // config refused a single file an exclude pattern matches: no exclude test here.
       const kind = await entryKind(mapping.local);
@@ -112,10 +113,13 @@ export async function scanLocal(
       const rel = relative(mapping.local, abs).split(sep).join('/').normalize('NFC');
       return under(mapping.localFromConfig, rel);
     };
+    const omitted = (abs: string): boolean =>
+      excluded(fromConfig(abs)) ||
+      scopedExcluded(relative(mapping.local, abs).split(sep).join('/').normalize('NFC'));
     for (const link of listed?.links ?? []) {
-      if (!excluded(fromConfig(link))) symlinks.push(fromConfig(link));
+      if (!omitted(link)) symlinks.push(fromConfig(link));
     }
-    const files = (listed?.files ?? []).filter((abs) => !excluded(fromConfig(abs)));
+    const files = (listed?.files ?? []).filter((abs) => !omitted(abs));
     // A folder whose every file is excluded would send nothing, like an empty one.
     if (files.length === 0) emptySources.push({ mapping, missing: listed === undefined });
     for (const abs of files) {

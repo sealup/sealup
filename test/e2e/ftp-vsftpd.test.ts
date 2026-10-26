@@ -147,26 +147,26 @@ describe.runIf(enabled)('vsftpd in a container, over FTPS', () => {
     const config = ftpsDeployConfig(
       server(),
       'write:',
-      `  api/.env: ${ref('SEALUP_CANARY_MULTILINE')}`,
+      `  api/[prod].env: ${ref('SEALUP_CANARY_MULTILINE')}`,
     );
     const project = createProject(config, { 'public_html/index.html': '<h1>home</h1>\n' });
 
     const first = await runCli([cli(), 'deploy'], { cwd: project.root });
     expect(first.exitCode, first.stderr).toBe(0);
     const secret = canaries.SEALUP_CANARY_MULTILINE;
-    expect((await server().tree('site')).get('api/.env')).toEqual({
+    expect((await server().tree('site')).get('api/[prod].env')).toEqual({
       size: Buffer.byteLength(secret),
       sha256: createHash('sha256').update(secret).digest('hex'),
     });
-    const written = await server().stat('site/api/.env');
+    const written = await server().stat('site/api/[prod].env');
     expect(written.mode).toBe(0o600);
 
     const again = await runCli([cli(), 'deploy'], { cwd: project.root });
     expect(again.exitCode, again.stderr).toBe(0);
     expect(again.stderr).toContain('Already up to date: 2 files checked');
-    expect(await server().stat('site/api/.env')).toEqual(written);
+    expect(await server().stat('site/api/[prod].env')).toEqual(written);
 
-    const { 'site/api/.env': _, ...others } = await server().files('.');
+    const { 'site/api/[prod].env': _, ...others } = await server().files('.');
     expect(Object.keys(others).some((path) => path.includes('.sealup-'))).toBe(false);
     expectNoLeaks(others);
   });

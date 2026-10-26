@@ -30,10 +30,15 @@ const uploadEntry = z.union([
         .boolean()
         .check(z.describe('Also delete server files sealup did not upload (minus excludes)')),
     ),
+    exclude: z.optional(
+      z
+        .array(text)
+        .check(z.describe('Patterns relative to this source folder: never sent or deleted')),
+    ),
   }),
 ]);
 const upload = z
-  .union([text, z.record(text, uploadEntry)])
+  .union([text, z.record(text, z.union([uploadEntry, z.array(uploadEntry).check(z.minLength(1))]))])
   .check(
     z.describe(
       'A folder sent to the target folder, or local: server pairs (folders or single files)',
@@ -145,7 +150,7 @@ const targetSchema = z.strictObject({
 /** Named targets; the top level holds what they share. */
 export const namedSchema = z.strictObject({
   ...tune,
-  upload,
+  upload: z.optional(upload),
   exclude,
   write,
   pull,
@@ -203,9 +208,11 @@ export function expectedAt(
     if (path.length === 1) return 'targets';
     if (path.length === 2) return keyRefused ? 'target-name' : 'target';
   }
-  const [key, below, field] = first === 'targets' ? path.slice(2) : path;
+  const [key, below, ...fields] = first === 'targets' ? path.slice(2) : path;
+  const field = typeof fields[0] === 'number' ? fields[1] : fields[0];
   if (key === 'upload') {
     if (field === 'mirror') return 'yes-no';
+    if (field === 'exclude') return 'patterns';
     return below === undefined ? 'upload' : 'upload-entry';
   }
   if (key === 'write') {

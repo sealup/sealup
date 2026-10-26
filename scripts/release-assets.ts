@@ -14,7 +14,7 @@
 //
 // Exit 0 when written, 1 when the package gate or a step fails, 2 on a usage error.
 
-import { execFileSync, execSync } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   copyFileSync,
@@ -26,8 +26,9 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { repoRoot } from './gates.ts';
 
@@ -112,6 +113,18 @@ function releaseNotes(version: string, changes: string | undefined): string {
 const sha256 = (file: string): string =>
   createHash('sha256').update(readFileSync(file)).digest('hex');
 
+/** Use npm's own CLI under npm; direct node calls resolve the npm installed with Node. */
+export function npmCliPath(): string {
+  const inherited = process.env.npm_execpath;
+  if (inherited !== undefined && basename(inherited) === 'npm-cli.js') return inherited;
+  const nodeDir = dirname(process.execPath);
+  // Windows puts npm in node_modules beside node.exe; Unix puts it in ../lib/node_modules.
+  const pkg = createRequire(process.execPath).resolve('npm/package.json', {
+    paths: [nodeDir, join(nodeDir, '..', 'lib')],
+  });
+  return join(dirname(pkg), 'bin', 'npm-cli.js');
+}
+
 function assets(o: Options): string {
   const pkg = JSON.parse(readFileSync(join(o.root, 'package.json'), 'utf8')) as {
     version?: unknown;
@@ -121,13 +134,15 @@ function assets(o: Options): string {
   const work = mkdtempSync(join(tmpdir(), 'sealup-release-assets-'));
   try {
     mkdirSync(o.out, { recursive: true });
-    // npm is a .cmd on Windows, which runs only through a shell; the command is fixed text and
-    // the folder is quoted.
-    const listing = execSync(`npm pack --json --pack-destination ${JSON.stringify(o.out)}`, {
-      cwd: o.root,
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    const listing = execFileSync(
+      process.execPath,
+      [npmCliPath(), 'pack', '--json', '--pack-destination', o.out],
+      {
+        cwd: o.root,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
     const listingFile = join(work, 'pack.json');
     writeFileSync(listingFile, listing);
     execFileSync(

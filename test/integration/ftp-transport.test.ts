@@ -45,6 +45,13 @@ describe('the probe at connect', () => {
     const session = await testFtpSession(ftpTarget(server));
     expect(session.caps.setMode).toBe(false);
   });
+
+  it('reports setMode false when APPE restores other-read after a successful CHMOD', async () => {
+    const server = await testFtpServer({ appendKeepsMode: false });
+    const session = await testFtpSession(ftpTarget(server));
+    expect(session.caps.setMode).toBe(false);
+    expect([...server.files().keys()]).toEqual([]);
+  });
 });
 
 // R16 on ProFTPD: its MLST describes what a link points to, so a link to a folder looked like a
@@ -68,6 +75,33 @@ describe('stat on a server whose MLST follows links', () => {
 });
 
 describe('a put with a mode (R17)', () => {
+  it('refuses a folder that resets modes only for nonempty appends, before sending secret bytes', async () => {
+    const server = await testFtpServer({
+      appendContentKeepsMode: (path) => !path.includes('/api/'),
+    });
+    const session = await testFtpSession(ftpTarget(server, { parallel: 1 }));
+    expect(session.caps.setMode).toBe(true);
+    await session.mkdir(at(session, 'api'));
+    const path = at(session, 'api/.env');
+    await expect(session.put(text('APP_KEY=fake'), path, { mode: 0o600 })).rejects.toMatchObject({
+      reason: 'mode-refused',
+      path,
+    });
+    expect(await readText(session, path)).not.toContain('APP_KEY=fake');
+  });
+  it('sends no content when APPE resets the requested mode on this path', async () => {
+    const server = await testFtpServer({ appendKeepsMode: (path) => !path.endsWith('/.env') });
+    const session = await testFtpSession(ftpTarget(server, { parallel: 1 }));
+    expect(session.caps.setMode).toBe(true);
+    const path = at(session, '.env');
+    await expect(session.put(text('APP_KEY=fake'), path, { mode: 0o600 })).rejects.toMatchObject({
+      code: 'protocol',
+      reason: 'mode-refused',
+      path,
+    });
+    expect(server.files().get(path)?.size ?? 0).toBe(0);
+    expect(server.files().get(path)?.firstByteMode).toBeUndefined();
+  });
   it('sends STOR of an empty file, SITE CHMOD, then APPE with the content', async () => {
     const server = await testFtpServer();
     const session = await testFtpSession(ftpTarget(server, { parallel: 1 }));
@@ -78,7 +112,16 @@ describe('a put with a mode (R17)', () => {
       .slice(before)
       .filter((command) => /^(STOR|APPE|SITE)/.test(command));
     const path = at(session, '.env');
-    expect(sent).toEqual([`STOR ${path}`, `SITE CHMOD 600 ${path}`, `APPE ${path}`]);
+    expect(sent).toEqual([
+      `STOR ${path}`,
+      `SITE CHMOD 600 ${path}`,
+      `APPE ${path}`,
+      `APPE ${path}`,
+      `STOR ${path}`,
+      `SITE CHMOD 600 ${path}`,
+      `APPE ${path}`,
+      `APPE ${path}`,
+    ]);
     expect(server.files().get(path)).toMatchObject({ mode: 0o600, firstByteMode: 0o600 });
   });
 
@@ -133,6 +176,7 @@ describe('listing (decision 6)', () => {
     server.seedFile(`${server.loginFolder}/run.sh`, '#!/bin/sh', { mode: 0o4755 });
     server.seedFile(`${server.loginFolder}/shared/a.txt`, 'x');
     const session = await testFtpSession(ftpTarget(server));
+    const before = server.commands().length;
     const listed = await session.list(session.loginFolder, 10);
     const entries = listed.kind === 'found' ? listed.entries : [];
     expect(entries.find((entry) => entry.name === 'run.sh')).toMatchObject({
@@ -141,8 +185,9 @@ describe('listing (decision 6)', () => {
       mode: 0o4755,
     });
     expect(entries.find((entry) => entry.name === 'shared')?.kind).toBe('folder');
-    expect(server.commands().some((command) => command.startsWith(used))).toBe(true);
-    expect(server.commands().some((command) => command.startsWith(unused))).toBe(false);
+    const commands = server.commands().slice(before);
+    expect(commands.some((command) => command.startsWith(used))).toBe(true);
+    expect(commands.some((command) => command.startsWith(unused))).toBe(false);
   });
 });
 

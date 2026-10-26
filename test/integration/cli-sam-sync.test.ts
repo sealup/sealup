@@ -4,11 +4,14 @@
 // and the converted project then passing `sealup check` and deploying, its secret file written
 // from APP_ENV. The sam-sync files are synthetic (test/sam-sync-kit.ts).
 
+import { execFileSync } from 'node:child_process';
 import { readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseEnv } from 'node:util';
 import { describe, expect, it } from 'vitest';
+import { gitEnv } from '../../scripts/git-env.ts';
 import { hostKeyPlaceholder } from '../../src/config/index.ts';
+import { ExitCode } from '../../src/contracts/index.ts';
 import {
   canaries,
   createMemoryServer,
@@ -129,7 +132,7 @@ describe('the offer, on a terminal', () => {
     const run = await terminal(root, ['y', enter, 'y', enter, enter, password, enter]);
     expect(run.exitCode, run.stderr).toBe(0);
     const screen = screenOf(run.stderr);
-    expect(screen).toContain('    1 secret        APP_ENV (api/.env.prod)\n');
+    expect(screen).not.toContain('APP_ENV');
     expect(screen).toContain(
       `  Password for deploy@ssh.example.com: ${'•'.repeat(password.length)}\n`,
     );
@@ -137,12 +140,52 @@ describe('the offer, on a terminal', () => {
     expect(screen).not.toContain('Then change the password');
     expect(parseEnv(readFileSync(join(root, 'sealup.env'), 'utf8'))).toEqual({
       SEALUP_PASSWORD: password,
-      APP_ENV: appEnv,
     });
   });
 });
 
 describe('--from, without a terminal', () => {
+  it('converts a pull-only project into loadable shorthand and actually pulls', async () => {
+    const root = newProject(
+      samSyncProject(
+        {
+          ...samSyncDeployment,
+          up: undefined,
+          down: { files: [{ source: 'api/data.json', destin: 'data/received.json' }] },
+        },
+        null,
+      ),
+    );
+    const converted = await runMain(['init', '--from', '.deployment.json'], { cwd: root });
+    expect(converted.exitCode, converted.stderr).toBe(0);
+    const config = readFileSync(join(root, 'sealup.yml'), 'utf8');
+    expect(config).toContain('upload: {}\n');
+    writeFileSync(
+      join(root, 'sealup.yml'),
+      config.replace(hostKeyPlaceholder, `hostKey: ${hostKeyLine}`),
+    );
+    const checked = await runMain(['check'], { cwd: root });
+    expect(checked.exitCode, checked.stderr).toBe(0);
+    const server = createMemoryServer({ loginFolder: '/home/deploy', quick: true });
+    server.seedFile('/home/site/api/data.json', 'synthetic-user-data');
+    const pulled = await runMain(['pull'], { cwd: root, server, tty: true });
+    expect(pulled.exitCode, pulled.stderr).toBe(0);
+    expect(readFileSync(join(root, 'data/received.json'), 'utf8')).toBe('synthetic-user-data');
+  });
+
+  it.each([
+    ['no entries', { host: 'ssh.example.com', user: 'deploy' }],
+    ['only omitted entries', { ...samSyncDeployment, up: { directories: [{ source: './' }] } }],
+  ])('refuses conversion with %s before writing an empty config', async (_, legacy) => {
+    const root = newProject(samSyncProject(legacy, null));
+    const run = await runMain(['init', '--from', '.deployment.json'], { cwd: root });
+    expect(run.exitCode).toBe(2);
+    expect(run.stderr).toContain('has no upload or pull entries sealup can convert');
+    expect(exists(join(root, 'sealup.yml'))).toBe(false);
+    expect(exists(join(root, 'sealup.env'))).toBe(false);
+    expect(exists(join(root, '.github/workflows/deploy.yml'))).toBe(false);
+  });
+
   it('converts with the host-key placeholder, never scanning, and moves the secrets', async () => {
     const root = newProject(samSyncProject());
     // runMain has no scan here: a scan would fail the run.
@@ -152,7 +195,6 @@ describe('--from, without a terminal', () => {
     expect(config.split('\n')[2]).toBe(hostKeyPlaceholder);
     expect(parseEnv(readFileSync(join(root, 'sealup.env'), 'utf8'))).toEqual({
       SEALUP_PASSWORD: password,
-      APP_ENV: appEnv,
     });
     expect(run.stderr).toContain(
       '    + sealup.yml                     from your 2 sam-sync files; no hostKey yet\n',
@@ -165,9 +207,8 @@ describe('--from, without a terminal', () => {
     expect(run.stderr).not.toContain("sam-sync never checked the server's identity");
   });
 
-  // R2, spec #24 decision 30: the password and the secret file's content are secrets the run
-  // read, so GitHub's form masks them before any other byte (runMain checks the rest for leaks).
-  it("masks the sam-sync password and the .env file's content first in GitHub's form", async () => {
+  // R2: only the connection password is read, and GitHub masks it before output.
+  it('masks the sam-sync password without reading or masking application env contents', async () => {
     const root = newProject(samSyncProject());
     const run = await runMain(['init', '--from', '.deployment.json'], {
       cwd: root,
@@ -176,7 +217,7 @@ describe('--from, without a terminal', () => {
     expect(run.exitCode, run.stderr).toBe(0);
     const { masks, rest } = splitMasks(run.stderr);
     for (const mask of canaryMasks) expect(masks.split('\n')).toContain(mask);
-    expect(masks.split('\n')).toContain('::add-mask::Cn4ry-second-line-fake');
+    expect(masks).not.toContain('::add-mask::Cn4ry-second-line-fake');
     expect(rest.split('\n')[0]).toBe(versionLine('init'));
   });
 
@@ -237,30 +278,109 @@ describe('--from, without a terminal', () => {
 });
 
 describe('what the conversion cannot move', () => {
-  it('says so when the file of a secret is not there, and writes the rest', async () => {
+  it('adds literal Git ignore rules for unusual env filenames and later negations', async () => {
+    const sources = [
+      'api/.env prod',
+      'api/.env[prod]',
+      'api/.env*.prod',
+      'api/.env?.prod',
+      '!draft/.env.prod',
+      '#draft/.env.prod',
+    ];
+    const root = newProject({
+      ...samSyncProject(
+        {
+          ...samSyncDeployment,
+          up: { files: sources.map((source, index) => ({ source, destin: `api/.env.${index}` })) },
+        },
+        null,
+      ),
+      '.gitignore': '/api/.env[prod]\n!/api/.env[prod]\nsealup.env\n!sealup.env\n',
+    });
+    const isolatedGitEnv = gitEnv({ GIT_CONFIG_GLOBAL: '', GIT_CONFIG_NOSYSTEM: '1' });
+    execFileSync('git', ['init', '--quiet'], { cwd: root, env: isolatedGitEnv });
+    const converted = await runMain(['init', '--from', '.deployment.json'], { cwd: root });
+    expect(converted.exitCode, converted.stderr).toBe(0);
+    const input = [...sources, 'sealup.env', 'api/.envp', 'api/.envwild.prod', 'api/.envx.prod'];
+    const ignored = execFileSync(
+      'git',
+      ['-c', 'core.excludesFile=', 'check-ignore', '--no-index', '--stdin', '-z'],
+      {
+        cwd: root,
+        env: isolatedGitEnv,
+        input: `${input.join('\0')}\0`,
+        encoding: 'utf8',
+      },
+    )
+      .split('\0')
+      .filter(Boolean);
+    expect(ignored).toEqual([...sources, 'sealup.env']);
+  });
+
+  it('ignores every direct env source, even when absent, without copying app secrets', async () => {
+    const files = samSyncProject(
+      {
+        ...samSyncDeployment,
+        up: {
+          ...samSyncDeployment.up,
+          files: [
+            { source: 'api/.env.prod', destin: 'api/.env' },
+            { source: 'api/.env.missing', destin: 'designer/.env' },
+          ],
+        },
+      },
+      null,
+    );
+    const root = newProject(files);
+    const run = await runMain(['init', '--from', '.deployment.json'], { cwd: root });
+    expect(run.exitCode, run.stderr).toBe(0);
+    const ignored = readFileSync(join(root, '.gitignore'), 'utf8');
+    expect(ignored).toContain('/api/.env.prod\n');
+    expect(ignored).toContain('/api/.env.missing\n');
+    const config = readFileSync(join(root, 'sealup.yml'), 'utf8');
+    expect(config).toContain('api/.env.missing: designer/.env');
+    expect(config).not.toContain('APP_ENV');
+    expect(parseEnv(readFileSync(join(root, 'sealup.env'), 'utf8'))).toEqual({
+      SEALUP_PASSWORD: password,
+    });
+    expect(readFileSync(join(root, '.github/workflows/deploy.yml'), 'utf8')).not.toContain(
+      'APP_ENV',
+    );
+  });
+
+  it('retains a missing env file mapping so check reports the required source', async () => {
     const files = samSyncProject(samSyncDeployment, null);
     delete files['api/.env.prod'];
     const root = newProject(files);
     const run = await runMain(['init', '--from', '.deployment.json'], { cwd: root });
     expect(run.exitCode, run.stderr).toBe(0);
-    expect(run.stderr).toContain(
-      '  APP_ENV: api/.env.prod is not here. Put its content in sealup.env as APP_ENV.\n',
-    );
+    expect(run.stderr).not.toContain('APP_ENV');
     expect(parseEnv(readFileSync(join(root, 'sealup.env'), 'utf8'))).toEqual({
       SEALUP_PASSWORD: password,
     });
-    expect(readFileSync(join(root, 'sealup.yml'), 'utf8')).toContain(`  api/.env: $\{APP_ENV}\n`);
+    const config = readFileSync(join(root, 'sealup.yml'), 'utf8');
+    expect(config).toContain('  api/.env.prod: api/.env\n');
+    writeFileSync(
+      join(root, 'sealup.yml'),
+      config.replace(hostKeyPlaceholder, `hostKey: ${hostKeyLine}`),
+    );
+    const checked = await runMain(['check'], { cwd: root });
+    expect(checked.exitCode).toBe(ExitCode.safetyNet);
+    expect(checked.stderr).toContain('api/.env.prod');
   });
 
-  it("reads an env file's CRLF line breaks as LF: sealup.env holds no CR", async () => {
+  it("leaves an env file's CRLF bytes untouched without snapshotting it", async () => {
     const root = newProject({
       ...samSyncProject(samSyncDeployment, null),
       'api/.env.prod': 'APP_KEY=base64:c2VjcmV0\r\nDB_PASSWORD=p4ssw0rd\r\n',
     });
     const run = await runMain(['init', '--from', '.deployment.json'], { cwd: root });
     expect(run.exitCode, run.stderr).toBe(0);
-    expect(parseEnv(readFileSync(join(root, 'sealup.env'), 'utf8')).APP_ENV).toBe(
-      'APP_KEY=base64:c2VjcmV0\nDB_PASSWORD=p4ssw0rd\n',
+    expect(parseEnv(readFileSync(join(root, 'sealup.env'), 'utf8'))).toEqual({
+      SEALUP_PASSWORD: password,
+    });
+    expect(readFileSync(join(root, 'api/.env.prod'), 'utf8')).toBe(
+      'APP_KEY=base64:c2VjcmV0\r\nDB_PASSWORD=p4ssw0rd\r\n',
     );
   });
 
@@ -292,7 +412,56 @@ describe('what the conversion cannot move', () => {
 });
 
 describe('the converted project', () => {
-  it('passes sealup check, then deploys, its .env written from APP_ENV', async () => {
+  it('deploys repeated sources to both instances with independent exclusions and direct env files', async () => {
+    const root = newProject({
+      ...samSyncProject(
+        {
+          ...samSyncDeployment,
+          up: {
+            directories: [
+              { source: 'api/', destin: 'main/api/', excludes: ['/.env*', '/storage'] },
+              { source: 'api/', destin: 'designer/api/', excludes: ['/.env*', '/cache'] },
+            ],
+            files: [
+              { source: 'api/.env.prod', destin: 'main/api/.env' },
+              { source: 'api/.env.designer.prod', destin: 'designer/api/.env' },
+            ],
+          },
+        },
+        null,
+      ),
+      'api/.env.prod': 'INSTANCE=main\n',
+      'api/.env.designer.prod': 'INSTANCE=designer\n',
+      'api/cache/generated.txt': 'main-only-cache',
+    });
+    const converted = await terminal(root, ['y', enter, 'y', enter, enter]);
+    expect(converted.exitCode, converted.stderr).toBe(0);
+    const checked = await runMain(['check'], { cwd: root });
+    expect(checked.exitCode, checked.stderr).toBe(0);
+    const server = createMemoryServer({ loginFolder: '/home/deploy', quick: true });
+    server.seedFile('/home/site/main/api/storage/user.txt', 'keep-main-user-data');
+    server.seedFile('/home/site/designer/api/cache/user.txt', 'keep-designer-user-data');
+    const deployed = await runMain(['deploy'], { cwd: root, server });
+    expect(deployed.exitCode, deployed.stderr).toBe(0);
+    expect(siteFiles(server)).toEqual([
+      'designer/api/.env',
+      'designer/api/cache/user.txt',
+      'designer/api/index.php',
+      'designer/api/storage/log.txt',
+      'main/api/.env',
+      'main/api/cache/generated.txt',
+      'main/api/index.php',
+      'main/api/storage/user.txt',
+    ]);
+    expect(
+      Buffer.from(server.files().get('/home/site/main/api/.env')?.bytes ?? []).toString('utf8'),
+    ).toBe('INSTANCE=main\n');
+    expect(
+      Buffer.from(server.files().get('/home/site/designer/api/.env')?.bytes ?? []).toString('utf8'),
+    ).toBe('INSTANCE=designer\n');
+  });
+
+  it('passes sealup check and deploys the current env file bytes on each run', async () => {
     const root = newProject(samSyncProject());
     const converted = await runMain(['init'], {
       cwd: root,
@@ -312,7 +481,14 @@ describe('the converted project', () => {
     expect(siteFiles(server)).toEqual(['api/.env', 'api/index.php', 'www/index.html']);
     const env = server.files().get('/home/site/api/.env');
     expect(Buffer.from(env?.bytes ?? []).toString('utf8')).toBe(appEnv);
-    expect(env?.mode).toBe(0o600);
+    expect(env?.mode).toBe(0o644);
+    const changed = 'APP_ENV=changed\r\nDB_PASSWORD=current-secret\r\n';
+    writeFileSync(join(root, 'api/.env.prod'), changed);
+    const redeployed = await runMain(['deploy'], { cwd: root, server });
+    expect(redeployed.exitCode, redeployed.stderr).toBe(0);
+    expect(
+      Buffer.from(server.files().get('/home/site/api/.env')?.bytes ?? []).toString('utf8'),
+    ).toBe(changed);
     expectNoLeaks({
       'sealup.yml': readFileSync(join(root, 'sealup.yml'), 'utf8'),
       workflow: readFileSync(join(root, '.github', 'workflows', 'deploy.yml'), 'utf8'),
@@ -336,7 +512,7 @@ describe('the converted project', () => {
     );
     expect(screen).toContain('  Is this repository public? [y/N] y\n');
     expect(screen).toContain(
-      '  On GitHub, add the secrets SEALUP_PASSWORD, APP_ENV, SEALUP_SERVER and SEALUP_HOST_KEY:\n  Settings › Secrets and variables › Actions › New repository secret\n  Copy each value from sealup.env.\n',
+      '  On GitHub, add the secrets SEALUP_PASSWORD, SEALUP_SERVER and SEALUP_HOST_KEY:\n  Settings › Secrets and variables › Actions › New repository secret\n  Copy each value from sealup.env.\n',
     );
     const config = readFileSync(join(root, 'sealup.yml'), 'utf8');
     expect(config.split('\n').slice(0, 4)).toEqual([
@@ -347,12 +523,11 @@ describe('the converted project', () => {
     ]);
     expect(parseEnv(readFileSync(join(root, 'sealup.env'), 'utf8'))).toEqual({
       SEALUP_PASSWORD: password,
-      APP_ENV: appEnv,
       SEALUP_SERVER: 'sftp://deploy@ssh.example.com/home/site',
       SEALUP_HOST_KEY: hostKeyLine,
     });
     const workflow = readFileSync(join(root, '.github', 'workflows', 'deploy.yml'), 'utf8');
-    for (const name of ['SEALUP_PASSWORD', 'APP_ENV', 'SEALUP_SERVER', 'SEALUP_HOST_KEY']) {
+    for (const name of ['SEALUP_PASSWORD', 'SEALUP_SERVER', 'SEALUP_HOST_KEY']) {
       expect(workflow).toContain(`          ${name}: $\{{ secrets.${name} }}\n`);
     }
 

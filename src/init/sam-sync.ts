@@ -1,6 +1,6 @@
 // The sam-sync conversion (spec #24 decision 22, S03; 0023 §9, I-053): a sam-sync
 // `.deployment.json`, and its `.download.json` when there is one, turned into the facts of one
-// sealup.yml. Undocumented: no help text or docs page names it. Pure: no node: import (paths
+// sealup.yml. Pure: no node: import (paths
 // reads every path, R10); in the import rules' pure list.
 //
 // sam-sync's format, from its own published package (sam-sync 1.1.1 on npm, index.js and
@@ -12,10 +12,10 @@
 //
 // The rules: the server becomes an sftp:// URL for `sftp`, an ssh:// URL for rsync over SSH
 // (0034), an ftp:// URL for `ftp` (spec #41 decision 18: S23's warning on its first run); `up`
-// folders become `upload`; rsync's excludes, written
-// from each folder, become .gitignore patterns from the config folder; a single file whose local name starts with
-// `.env` becomes a `write` entry from a variable (`APP_ENV`), its content for sealup.env; other
-// single files become single-file uploads; `down` entries, of either file when on the same
+// folders become `upload`; rsync's excludes stay scoped to each source folder. Every single
+// file becomes a direct upload; .env* source paths are recorded for .gitignore, never read or
+// snapshotted into sealup.env. Repeated sources retain their destinations. `down` entries,
+// of either file when on the same
 // server, become `pull:`. What sealup.yml cannot hold is left out and said, never guessed.
 
 import {
@@ -25,7 +25,7 @@ import {
   newConfigText,
   passwordVariable,
 } from '../config/index.ts';
-import { excludeMatcher, inCommandSet, isWithin, normalizePath } from '../paths/index.ts';
+import { inCommandSet, isWithin, normalizePath } from '../paths/index.ts';
 
 /** One sam-sync file: its path from the project folder (`/`-separated) and its text. */
 export interface SamSyncFile {
@@ -39,9 +39,7 @@ type LeftOutReason =
   | 'outside'
   /** It uploads the project folder itself (it would send sealup.env), or pulls into it. */
   | 'project-folder'
-  /** A single file its folder's excludes leave out: sealup never sends an excluded file. */
-  | 'excluded'
-  /** The same local (upload) or server (pull) side as an entry before it. */
+  /** An exact redundant upload or a repeated server side of a pull. */
   | 'twice';
 
 export interface SamSyncConversion {
@@ -58,14 +56,10 @@ export interface SamSyncConversion {
     readonly local: string;
     readonly remote: string;
     readonly kind: 'folder' | 'file';
+    readonly exclude?: readonly string[];
   }[];
-  readonly exclude: readonly string[];
-  /** Files written from a secret: the local file whose content goes to sealup.env. */
-  readonly write: readonly {
-    readonly local: string;
-    readonly remote: string;
-    readonly variable: string;
-  }[];
+  /** Directly uploaded .env* files, whose source paths must be ignored by Git. */
+  readonly envFiles: readonly string[];
   readonly pull: readonly {
     readonly remote: string;
     readonly local: string;
@@ -109,9 +103,6 @@ interface SamSyncConfig {
   readonly down: { readonly directories: readonly Entry[]; readonly files: readonly Entry[] };
 }
 
-/** The variable a file written from a secret reads, by its order: APP_ENV, APP_ENV_2, … */
-const envVariable = (index: number): string => (index === 0 ? 'APP_ENV' : `APP_ENV_${index + 1}`);
-
 export function convertSamSync(files: {
   readonly deployment: SamSyncFile;
   readonly download?: SamSyncFile;
@@ -140,9 +131,13 @@ export function convertSamSync(files: {
   };
   const deployBase = folderOf(files.deployment.name);
 
-  const upload: { local: string; remote: string; kind: 'folder' | 'file' }[] = [];
-  const exclude: string[] = [];
-  const write: { local: string; remote: string; variable: string }[] = [];
+  const upload: {
+    local: string;
+    remote: string;
+    kind: 'folder' | 'file';
+    exclude?: readonly string[];
+  }[] = [];
+  const envFiles = new Set<string>();
   const singles: { local: string; remote: string }[] = [];
   const sent = new Set<string>();
   for (const entry of deploy.up.directories) {
@@ -156,15 +151,22 @@ export function convertSamSync(files: {
       leave(entry.source, entry.destin ?? entry.source, 'project-folder');
       continue;
     }
-    if (sent.has(from)) {
+    const exclude = (entry.excludes ?? []).map((pattern) =>
+      pattern.startsWith('/') ? pattern : `**/${pattern}`,
+    );
+    const identity = JSON.stringify([from, to, 'folder', exclude]);
+    if (sent.has(identity)) {
       leave(entry.source, entry.destin ?? entry.source, 'twice');
       continue;
     }
-    sent.add(from);
-    upload.push({ local: from, remote: to, kind: 'folder' });
-    exclude.push(...(entry.excludes ?? []).map((pattern) => gitignorePattern(from, pattern)));
+    sent.add(identity);
+    upload.push({
+      local: from,
+      remote: to,
+      kind: 'folder',
+      ...(exclude.length ? { exclude } : {}),
+    });
   }
-  const excluded = excludeMatcher(exclude);
   for (const entry of deploy.up.files) {
     const from = local(deploy, deployBase, entry.source);
     const to = remote(deploy, entry.destin ?? entry.source);
@@ -173,18 +175,14 @@ export function convertSamSync(files: {
       continue;
     }
     if (from.slice(from.lastIndexOf('/') + 1).startsWith('.env')) {
-      write.push({ local: from, remote: to, variable: envVariable(write.length) });
-      continue;
+      envFiles.add(from);
     }
-    if (excluded(from)) {
-      leave(entry.source, entry.destin ?? entry.source, 'excluded');
-      continue;
-    }
-    if (sent.has(from)) {
+    const identity = JSON.stringify([from, to, 'file']);
+    if (sent.has(identity)) {
       leave(entry.source, entry.destin ?? entry.source, 'twice');
       continue;
     }
-    sent.add(from);
+    sent.add(identity);
     singles.push({ local: from, remote: to });
   }
   upload.push(...singles.map((single) => ({ ...single, kind: 'file' as const })));
@@ -239,8 +237,7 @@ export function convertSamSync(files: {
         ? {}
         : { password: envSecret(passwordVariable, deploy.password) }),
       upload,
-      exclude,
-      write,
+      envFiles: [...envFiles],
       pull,
       dropped,
       ...(down === undefined ? {} : { download: sameServer ? 'same' : 'other' }),
@@ -278,13 +275,21 @@ function convertedConfig(
   conversion: SamSyncConversion,
   { hostKey, publicRepo }: ConvertedOptions,
 ): NewConfig {
+  type Destination = string | { readonly to: string; readonly exclude: readonly string[] };
+  const uploads = new Map<string, Destination[]>();
+  for (const { local, remote, exclude } of conversion.upload) {
+    const entries = uploads.get(local) ?? [];
+    entries.push(exclude === undefined ? remote : { to: remote, exclude });
+    uploads.set(local, entries);
+  }
   return {
     server: conversion.server,
     ...(hostKey === undefined ? {} : { hostKey }),
     ...(publicRepo === true ? { publicRepo } : {}),
-    upload: conversion.upload.map(({ local, remote }) => [local, remote] as const),
-    exclude: conversion.exclude,
-    write: conversion.write.map(({ remote, variable }) => [remote, variable] as const),
+    upload: [...uploads].map(([local, entries]) => [
+      local,
+      entries.length === 1 ? (entries[0] ?? entries) : entries,
+    ]),
     pull: conversion.pull.map(({ remote, local }) => [remote, local] as const),
   };
 }
@@ -394,7 +399,7 @@ function serverFolder(prefix: string): { readonly path: string; readonly rest: s
  * folder itself; undefined outside it (R10, paths' normalizePath: segment by segment).
  */
 function projectPath(path: string): string | undefined {
-  if (path.startsWith('/')) return undefined;
+  if (path.startsWith('/') || /\p{Cc}/u.test(path)) return undefined;
   return normalizePath(path);
 }
 
@@ -402,15 +407,4 @@ function projectPath(path: string): string | undefined {
 function folderOf(path: string): string {
   const slash = path.lastIndexOf('/');
   return slash === -1 ? '.' : path.slice(0, slash) || '/';
-}
-
-/**
- * One of rsync's `--exclude` patterns of a folder, as a .gitignore pattern from the config
- * folder: `/x` is anchored to the folder (`folder/x`); a pattern without a leading `/` matches
- * at any depth below it (`folder/**\/x`); a last `/` (folders only) is kept.
- */
-function gitignorePattern(folder: string, pattern: string): string {
-  const anchored = pattern.startsWith('/');
-  const body = anchored ? pattern.replace(/^\/+/, '') : pattern;
-  return anchored ? `${folder}/${body}` : `${folder}/**/${body}`;
 }

@@ -107,13 +107,38 @@ describe('configJsonSchema', () => {
           type: 'object',
           additionalProperties: {
             anyOf: [
-              { type: 'string', description: expect.stringContaining('file path') },
-              { properties: { to: { description: expect.stringContaining('file path') } } },
+              {
+                anyOf: [
+                  { type: 'string', description: expect.stringContaining('file path') },
+                  {
+                    properties: {
+                      to: { description: expect.stringContaining('file path') },
+                      exclude: { type: 'array' },
+                    },
+                  },
+                ],
+              },
+              {
+                type: 'array',
+                minItems: 1,
+                items: {
+                  anyOf: [
+                    { type: 'string' },
+                    { properties: { to: { type: 'string' }, exclude: { type: 'array' } } },
+                  ],
+                },
+              },
             ],
           },
         },
       ],
     });
+  });
+
+  it('requires no root upload when targets hold their own operations', () => {
+    const [shorthand, named] = schema.anyOf as { required: string[] }[];
+    expect(shorthand?.required).toContain('upload');
+    expect(named?.required).toEqual(['targets']);
   });
 
   it('says a write entry takes a variable, or the long form with a quoted mode', () => {

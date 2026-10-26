@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { loadConfig } from '../../src/config/index.ts';
-import type { Connect, DeployEvent, Plan } from '../../src/contracts/index.ts';
+import type { Connect, DeployEvent, Plan, ServerPath } from '../../src/contracts/index.ts';
 import { deploy, type ListingLimits, listingLimits } from '../../src/deploy/index.ts';
 import { createMemoryServer, steppedClock } from '../../src/testkit/index.ts';
 import { createProject, eventLog, productionConfig, siteFiles } from '../deploy-kit.ts';
@@ -21,6 +21,7 @@ async function mirrored(
   options: {
     limits?: ListingLimits;
     config?: string;
+    mirror?: boolean;
     faults?: (server: ReturnType<typeof createMemoryServer>) => void;
   } = {},
 ) {
@@ -39,7 +40,7 @@ async function mirrored(
     {
       config: loaded.config,
       target: 'production',
-      mirror: true,
+      mirror: options.mirror ?? true,
       limits: options.limits ?? listingLimits,
     },
     {
@@ -124,4 +125,150 @@ describe('the full mirror after a reconnect (spec #41 decision 20)', () => {
     expect(outcome).toMatchObject({ exitCode: 0, reconnects: 1 });
     expect(siteFiles(server)).toEqual(['index.html']);
   });
+});
+
+describe('scoped exclusions and server links in the full mirror', () => {
+  it('keeps an excluded runtime link and its contents while deleting other strays', async () => {
+    const config = productionConfig().replace(
+      'upload: public_html',
+      'upload:\n  public_html:\n    to: .\n    exclude: [storage]',
+    );
+    const { outcome, server, events } = await mirrored(['old.php'], {
+      config,
+      faults: (server) => {
+        server.seedFile('/outside/sentinel.txt', 'runtime data');
+        server.seedLink('/home/site/storage', '/outside');
+      },
+    });
+
+    expect(outcome).toMatchObject({ exitCode: 0, uploaded: 1, deleted: 1 });
+    expect(planOf(events).ops.some(({ path }) => path.startsWith('storage'))).toBe(false);
+    expect(siteFiles(server)).toEqual(['index.html']);
+    expect(Buffer.from(server.files().get('/outside/sentinel.txt')?.bytes ?? []).toString()).toBe(
+      'runtime data',
+    );
+    const session = await server.connect();
+    expect((await session.stat('/home/site/storage' as ServerPath)).kind).toBe('link');
+    await session.close();
+  });
+
+  it('keeps a separately mirrored root that another mapping excludes', async () => {
+    const config = productionConfig()
+      .replace(
+        'upload: public_html',
+        [
+          'upload:',
+          '  public_html:',
+          '    - to: .',
+          '      exclude: [storage]',
+          '    - to: storage',
+          '      exclude: ["*"]',
+          '      mirror: true',
+        ].join('\n'),
+      )
+      .replace('  production:', '  production:\n    allow: [empty-source]');
+    const { outcome, server } = await mirrored([], {
+      config,
+      mirror: false,
+      faults: (server) => server.seedLink('/home/site/storage', '/outside'),
+    });
+
+    expect(outcome).toMatchObject({ exitCode: 0, uploaded: 1, deleted: 0 });
+    const session = await server.connect();
+    expect((await session.stat('/home/site/storage' as ServerPath)).kind).toBe('link');
+    await session.close();
+  });
+
+  it('never lists a separately mirrored folder root protected by another mapping', async () => {
+    const config = productionConfig()
+      .replace(
+        'upload: public_html',
+        [
+          'upload:',
+          '  public_html:',
+          '    - to: .',
+          '      exclude: [storage/]',
+          '    - to: storage',
+          '      exclude: ["*"]',
+          '      mirror: true',
+        ].join('\n'),
+      )
+      .replace('  production:', '  production:\n    allow: [empty-source]');
+    const runtime = Array.from({ length: 10 }, (_, index) => `storage/${index}.txt`);
+    const { outcome, server } = await mirrored(runtime, {
+      config,
+      mirror: false,
+      limits: { entries: 2, depth: 64 },
+    });
+
+    expect(outcome).toMatchObject({ exitCode: 0, uploaded: 1, deleted: 0 });
+    expect(siteFiles(server)).toEqual(['index.html', ...runtime].sort());
+  });
+
+  it.each(['cache', 'storage/'])(
+    'still stops on a runtime link that %s does not exclude',
+    async (pattern) => {
+      const config = productionConfig().replace(
+        'upload: public_html',
+        `upload:\n  public_html:\n    to: .\n    exclude: [${pattern}]`,
+      );
+      const { outcome, server, before } = await mirrored(['old.php'], {
+        config,
+        faults: (server) => server.seedLink('/home/site/storage', '/outside'),
+      });
+
+      expect(outcome.problem).toMatchObject({
+        code: 'symlink',
+        on: 'server',
+        path: '/home/site/storage',
+      });
+      expect(outcome).toMatchObject({ exitCode: 6, uploaded: 0, deleted: 0 });
+      expect(server.files()).toEqual(before);
+    },
+  );
+
+  it.each([
+    [false, false],
+    [false, true],
+    [true, false],
+    [true, true],
+  ])(
+    'still stops an explicit upload through an excluded link (allow symlinks=%s, all mappings=%s)',
+    async (allowed, all) => {
+      const config = productionConfig()
+        .replace(
+          'upload: public_html',
+          [
+            'upload:',
+            '  public_html:',
+            '    - to: .',
+            '      exclude: [storage]',
+            '    - to: storage',
+            '      exclude: ["*"]',
+            '      mirror: true',
+            '  public_html/index.html: storage/index.html',
+          ].join('\n'),
+        )
+        .replace(
+          '  production:',
+          `  production:\n    allow: [empty-source${allowed ? ', symlinks' : ''}]`,
+        );
+      const { outcome, server, before } = await mirrored(['old.php'], {
+        config,
+        mirror: all,
+        faults: (server) => {
+          server.seedFile('/outside/sentinel.txt', 'runtime data');
+          server.seedLink('/home/site/storage', '/outside');
+        },
+      });
+
+      expect(outcome.problem).toMatchObject({
+        code: 'symlink',
+        on: 'server',
+        path: '/home/site/storage',
+      });
+      expect(outcome).toMatchObject({ exitCode: 6, uploaded: 0, deleted: 0 });
+      expect(server.files()).toEqual(before);
+    },
+  );
 });

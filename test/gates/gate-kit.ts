@@ -144,14 +144,19 @@ export function runGate(name: GateName, cwd: string): Promise<GateRun> {
 }
 
 /** Runs `node <args>` in `cwd`, with `input` on stdin when given. */
-export function runNode(args: readonly string[], cwd: string, input?: string): Promise<GateRun> {
+export function runNode(
+  args: readonly string[],
+  cwd: string,
+  input?: string,
+  env: NodeJS.ProcessEnv = {},
+): Promise<GateRun> {
   return new Promise((resolve) => {
     const child = execFile(
       process.execPath,
       args,
       {
         cwd,
-        env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0' },
+        env: { ...process.env, NO_COLOR: '1', FORCE_COLOR: '0', ...env },
         maxBuffer: 16 * 1024 * 1024,
       },
       (error, stdout, stderr) => {

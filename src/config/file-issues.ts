@@ -117,11 +117,24 @@ export function schemaIssues(
   const path = issue.path.filter((key): key is string | number => typeof key !== 'symbol');
   // A `write` or `upload` entry in the long form: its own key's issue (the mode, `mirror`, a key it
   // does not take), not "the entry is wrong", so the line is the one to fix.
-  if (issue.code === 'invalid_union' && isEntry(path) && isMapping(valueAt(data, path))) {
+  if (
+    issue.code === 'invalid_union' &&
+    isEntry(path) &&
+    (isMapping(valueAt(data, path)) || Array.isArray(valueAt(data, path)))
+  ) {
     // The long form's issues: those of the option that took a mapping (not "expected text").
-    const nested = issue.errors.find(
-      (errors) => !errors.some((inner) => inner.code === 'invalid_type' && inner.path.length === 0),
-    );
+    const nested =
+      issue.errors.find((errors) =>
+        errors.every(
+          (inner) =>
+            inner.path.length > 0 ||
+            (inner.code !== 'invalid_type' && inner.code !== 'invalid_union'),
+        ),
+      ) ??
+      issue.errors.find(
+        (errors) =>
+          !errors.some((inner) => inner.code === 'invalid_type' && inner.path.length === 0),
+      );
     if (nested !== undefined) {
       return nested.flatMap((inner) =>
         schemaIssues({ ...inner, path: [...path, ...inner.path] }, data, place),
@@ -140,7 +153,9 @@ export function schemaIssues(
 function isEntry(path: Path): boolean {
   const [first] = path;
   const [key, ...below] = first === 'targets' ? path.slice(2) : path;
-  return key === 'upload' ? below.length <= 1 : key === 'write' && below.length === 1;
+  return key === 'upload'
+    ? below.length <= 1 || (below.length === 2 && typeof below[1] === 'number')
+    : key === 'write' && below.length === 1;
 }
 
 function valueAt(data: unknown, path: Path): unknown {

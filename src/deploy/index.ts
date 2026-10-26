@@ -109,6 +109,7 @@ import { identityAfterConnect, identityAfterFailure, identityBefore } from './id
 import { linkedPlan, serverLinkCheck } from './links.ts';
 import { manifestInsideTarget } from './manifest-folder.ts';
 import { listMirrored, riskyFolder } from './mirror.ts';
+import { refusedModeProblem, refusedWriteMode } from './modes.ts';
 
 export { mirroredPulls } from './mirror.ts';
 
@@ -271,14 +272,7 @@ export async function deploy(request: DeployRequest, ports: DeployPorts): Promis
       // R17 over FTP (spec #41 decision 7): a server that cannot set modes gets no secret file.
       const [unsafe] = session.caps.setMode ? [] : target.writes;
       if (unsafe !== undefined) {
-        return stop({
-          code: 'secret-file-public',
-          path: under(target.server.folder, unsafe.path),
-          folder: target.server.folder,
-          place: unsafe.place,
-          target: target.name,
-          reason: 'mode-refused',
-        });
+        return stop(refusedModeProblem(target, unsafe));
       }
       const root = serverFolder(target.server.folder, session);
       const manifestFolder = serverFolder(target.manifestFolder, session);
@@ -386,6 +380,19 @@ export async function deploy(request: DeployRequest, ports: DeployPorts): Promis
       if (blocked !== undefined) return stop(blockedProblem(blocked, target, root));
       emit({ type: 'plan', plan: compared.plan });
       if (dryRun) return finish(wouldDo(compared.plan, clock() - started, { ...timings }));
+      if (target.server.protocol === 'ftp' || target.server.protocol === 'ftps') {
+        const refused = await refusedWriteMode(
+          session,
+          root,
+          compared.plan,
+          target.writes,
+          store,
+          compared.remote.kind === 'found' ? compared.remote.manifest : undefined,
+        );
+        if (refused !== undefined) {
+          return stop(refusedModeProblem(target, refused));
+        }
+      }
 
       const found = compared.remote.kind === 'found' ? compared.remote.manifest : undefined;
       const uploads = count(compared.plan, 'upload');
@@ -537,8 +544,8 @@ export async function beforeConnecting(
   // Story 43: two entries sending one server path is a config problem (exit 2), before the nets.
   // The write entries come after the uploads, so the issue lands on the write's line.
   const clash = sameServerPath([
-    ...scanned.sent.map(({ path, mapping }) => ({ path, place: mapping.place })),
-    ...target.writes.map(({ path, place }) => ({ path, place })),
+    ...scanned.sent.map(({ path, mapping }) => ({ path, place: mapping.place, entry: mapping })),
+    ...target.writes.map((write) => ({ path: write.path, place: write.place, entry: write })),
   ]);
   if (clash !== undefined) {
     return { problem: { code: 'config', issues: [clash], target: target.name }, scanned };

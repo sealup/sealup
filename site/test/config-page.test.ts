@@ -55,6 +55,38 @@ describe('the config page from schema.json', () => {
 });
 
 describe('a key the schema gains', () => {
+  it('documents fields inside destination arrays without repeating shared fields', () => {
+    const entry = {
+      type: 'object',
+      properties: {
+        to: { type: 'string', description: 'Destination' },
+        exclude: { type: 'array', items: { type: 'string' }, description: 'Folder-relative exclusions' },
+      },
+      required: ['to'],
+    };
+    const page = configPage({
+      type: 'object',
+      properties: {
+        upload: {
+          type: 'object',
+          additionalProperties: {
+            anyOf: [{ type: 'array', items: entry }, entry],
+          },
+        },
+      },
+    });
+    assert.match(page, /Folder-relative exclusions/);
+    assert.equal((page.match(/\| `to` \|/g) ?? []).length, 1);
+    assert.equal((page.match(/\| `exclude` \|/g) ?? []).length, 1);
+    const arrayOnly = configPage({
+      type: 'object',
+      properties: {
+        upload: { type: 'object', additionalProperties: { type: 'array', items: entry } },
+      },
+    });
+    assert.match(arrayOnly, /Folder-relative exclusions/);
+  });
+
   it('gets its section with no change to the page code', () => {
     const page = configPage({
       anyOf: [

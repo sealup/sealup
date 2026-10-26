@@ -240,7 +240,7 @@ export function sentence(issue: ConfigIssue): string {
     case 'unknown-key':
       return 'unknown key; sealup stops on it';
     case 'missing-key':
-      return 'missing';
+      return issue.expected === 'operations' ? expectedWords.operations : 'missing';
     case 'wrong-type':
       return expectedWords[issue.expected ?? 'text'];
     case 'shorthand-with-targets':
@@ -307,12 +307,14 @@ const expectedWords: Readonly<Record<ConfigExpected, string>> = {
   fingerprint: 'write the SHA-256 that sealup keyscan shows, like 71:CA:A9:…',
   duration: 'write a duration like 30s or 2m',
   upload: 'write a folder, or local: server pairs',
-  'upload-entry': 'write the server folder, or file path',
+  'upload-entry': 'write a server path, {to: path}, or a nonempty list of those destinations',
   targets: 'write target names with their keys',
   target: "write this target's keys",
   'target-name': 'use letters, digits, . _ - only',
   allow: 'write a list, like [empty-source]',
   patterns: 'write a list of patterns, like [logs, *.map]',
+  'folder-exclude': 'exclude is only for source folders; remove it from this file mapping',
+  operations: 'add at least one upload, write or pull entry',
   write: `write server file: secret pairs, like api/.env: $\{APP_ENV}`,
   'write-entry': 'write one variable, or from: with mode: and allowPublic:',
   mode: "write the mode in quotes, like '0640'",

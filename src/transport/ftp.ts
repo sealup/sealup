@@ -40,6 +40,7 @@ import {
 } from '../contracts/index.ts';
 import { parseServerPath } from '../paths/index.ts';
 import { reveal } from '../secret/index.ts';
+import { ftpFileMode } from './ftp-mode.ts';
 import { createFtpSession, type FtpLink, refusedCertificate } from './ftp-session.ts';
 import { handshakeBound, interrupted, unreachable } from './unreachable.ts';
 
@@ -498,7 +499,21 @@ async function probe(client: Client, loginFolder: ServerPath): Promise<Capabilit
   }
   try {
     const chmod = await client.sendIgnoringError(`SITE CHMOD 600 ${a}`);
-    const setMode = chmod.code >= 200 && chmod.code < 300;
+    let setMode = chmod.code >= 200 && chmod.code < 300 && (await ftpFileMode(client, a)) === 0o600;
+    if (setMode) {
+      // A server may accept CHMOD but reset the mode on APPE. Test with public probe bytes,
+      // never a secret. Where APPE is refused, the STOR fallback must preserve the mode too.
+      const content = (): Readable => Readable.from(['sealup mode probe'], { objectMode: false });
+      try {
+        await client.appendFrom(content(), a);
+      } catch (error) {
+        if (!isReply(error)) throw error;
+        await client.uploadFrom(empty(), a);
+        setMode = (await ftpFileMode(client, a)) === 0o600;
+        if (setMode) await client.uploadFrom(content(), a);
+      }
+      if (setMode) setMode = (await ftpFileMode(client, a)) === 0o600;
+    }
     await client.uploadFrom(empty(), b);
     const from = await client.sendIgnoringError(`RNFR ${a}`);
     const to = from.code === 350 ? await client.sendIgnoringError(`RNTO ${b}`) : from;

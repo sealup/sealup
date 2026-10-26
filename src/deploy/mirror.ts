@@ -3,11 +3,11 @@
 // plan() decides what goes; this only lists.
 //
 // Nothing is listed below a link, an excluded folder or a name no path can hold (R10, R12: a
-// server name is only ever a name). A link stops the run unless the target allows symlinks; then
-// it is left alone (decision 28). A mirrored folder that is a link, or sits behind one, counts as
-// a link found there. R21's caps hold (listingLimits): past one, nothing more is listed and the
-// run stops before any change. What the listing saw is handed to the run's LinkCheck, so the R16
-// check never looks at it again.
+// server name is only ever a name). An unexcluded link stops the run unless the target allows
+// symlinks; then it is left alone (decision 28). An unexcluded mirrored folder that is a link,
+// or sits behind one, counts as a link found there. R21's caps hold (listingLimits): past one,
+// nothing more is listed and the run stops before any change. What the listing saw is handed
+// to the run's LinkCheck, so the R16 check never looks at it again.
 
 import {
   type Mapping,
@@ -158,6 +158,8 @@ async function listMirror(
   let level: (RemotePath | '')[] = [];
   for (const folder of roots) {
     if (folder === '') level.push(folder);
+    // Another mapping may protect this root; planned uploads still get their own link check.
+    else if (excluded(folder)) hold(folder);
     else if (depth(folder) > limits.depth) return stop(folder, 'depth');
     // The mirrored folder itself, and the folders above it, may be links (R16).
     else if ((await linkCheck.behind([folder])).has(folder)) {
@@ -165,7 +167,8 @@ async function listMirror(
         const link = [...foldersAbove(folder), folder].find((path) => linkCheck.isLink(path));
         return { link: at(link ?? folder) };
       }
-    } else level.push(folder);
+    } else if (excluded(folder, true)) hold(folder);
+    else level.push(folder);
   }
 
   let count = 0;
@@ -196,11 +199,11 @@ async function listMirror(
         }
         const path = parsed.path;
         linkCheck.saw(path, entry.kind);
-        if (entry.kind === 'link') {
+        if (entry.kind === 'other' || excluded(path, entry.kind === 'folder')) hold(folder);
+        else if (entry.kind === 'link') {
           if (links) listing.links.add(path);
           else found.push(path);
-        } else if (entry.kind === 'other' || excluded(path, entry.kind === 'folder')) hold(folder);
-        else if (entry.kind === 'file') listing.files.add(path);
+        } else if (entry.kind === 'file') listing.files.add(path);
         else if (depth(path) > limits.depth) tooLarge ??= stop(path, 'depth');
         else {
           listing.folders.add(path);

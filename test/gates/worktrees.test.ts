@@ -33,11 +33,12 @@ const clean: readonly ProjectFile[] = [
     content: [
       "import { Client as FtpClient } from 'basic-ftp';",
       "import { build } from 'esbuild';",
+      "import { assert } from 'fast-check';",
       "import { Client } from 'ssh2';",
       "import { parse } from 'yaml';",
       "import { z } from 'zod';",
       '',
-      'console.log(FtpClient, build, Client, parse, z);',
+      'console.log(FtpClient, build, assert, Client, parse, z);',
       '',
     ].join('\n'),
   },

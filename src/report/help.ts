@@ -96,13 +96,15 @@ const init: readonly Line[] = [
   [],
   heading('WITHOUT A TERMINAL'),
   ...plain(
-    '  --server is needed. sealup.yml gets a placeholder for the host key (run',
-    '  sealup keyscan on your computer), and no sealup.env is written.',
+    '  --server or --from is needed. sealup.yml gets a host-key placeholder:',
+    '  run sealup keyscan on your computer. --from moves the old connection',
+    '  password into sealup.env; --server writes no sealup.env.',
   ),
   [],
   heading('FLAGS'),
   ...plain(
     '      --server <url>        sftp|ssh|ftps|ftp://user@host[:port]/folder',
+    '      --from <file>         Convert a sam-sync deployment file',
     '',
     '  Global flags: --json, --no-color (sealup --help)',
   ),

@@ -560,10 +560,18 @@ describe('plan: single files in upload (scope v1, spec #24 decision 23)', () => 
 });
 
 describe('sameServerPath: two entries that send one server path (story 43)', () => {
+  const owners = new Map<string, object>();
   const entry = (path: string, local: string, line: number) => ({
     path: path as RemotePath,
+    entry: owner(local, line),
     place: uploadPlace(local, line),
   });
+  function owner(local: string, line: number): object {
+    const key = `${local}:${line}`;
+    const token = owners.get(key) ?? {};
+    owners.set(key, token);
+    return token;
+  }
 
   it('finds none when every entry sends its own paths', () => {
     const entries = [

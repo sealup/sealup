@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.2.2](https://github.com/sealup/sealup/compare/v0.2.1...v0.2.2) (2026-10-26)
+
+### Features
+
+* **config:** an upload can rename a local file on the server, such as `api/.env.prod: api/.env`, so an env file that changes with your app is read fresh on every deploy without putting its contents in a secret.
+* **config:** a folder upload takes its own `exclude:` list, relative to its source folder. Matching files are never sent, and `--mirror` never deletes them on the server.
+* **config:** one local source can go to several server destinations, as a list.
+* **config:** a config with named targets no longer needs an empty `upload: {}` at the top.
+* **init:** `sealup init --from` converts a sam-sync config more faithfully: env files stay local uploads instead of copying their contents into a secret, their source names are added to `.gitignore`, repeated sources keep every destination, and nothing is written when there is nothing to convert. `--from` is now listed in `sealup init --help`.
+
+### Bug Fixes
+
+* **ftp:** `write:` stops with exit 6, before any upload, when the server resets a file's permissions on upload (OVH's FTP sets `0604` instead of `0600`). Before, the secret file was left readable by others and rewritten on every run. SFTP and ordinary FTP uploads are unchanged.
+* **security:** sealup now bundles zod 4.6.7, which fixes a memory-exhaustion advisory ([GHSA-mrhx-c7xc-m3w5](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5)). sealup only uses zod to validate your own `sealup.yml`.
+
 ## [0.2.1](https://github.com/sealup/sealup/compare/v0.2.0...v0.2.1) (2026-10-13)
 
 No change to how sealup works: maintenance only.

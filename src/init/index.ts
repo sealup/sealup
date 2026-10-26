@@ -11,10 +11,11 @@
 // workflow, and gives each file and what happened to it, or the problem of a sealup.yml already
 // there; a public repository's server and host key go to sealup.env as plain values (0045). cli
 // asks the questions (the server, the host key, whether the repo is public, the password) and
-// report words the screen. The sam-sync conversion (#37, undocumented) is a second way to make
+// report words the screen. The sam-sync conversion (#37) is a second way to make
 // the plan: readSamSync(folder, file) reads a sam-sync file, its download file and what the
 // conversion needs, convertSamSync (sam-sync.ts, pure) turns them into sealup.yml's facts and
-// convertedConfigText into its text; sealup.env gets the password and each secret file's content.
+// convertedConfigText into its text; sealup.env gets connection secrets. Local app env files
+// stay direct uploads, their paths added to .gitignore even when they are absent.
 //
 // Invariants: never overwrites. sealup.yml is created exclusively, first: one already there stops
 // init with nothing written. An existing workflow is left as it is; an existing sealup.env only
@@ -28,9 +29,7 @@ import { appendFile, chmod, mkdir, readdir, readFile, writeFile } from 'node:fs/
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { parseEnv } from 'node:util';
 import {
-  type EnvSecret,
   type EnvValue,
-  envSecret,
   findRepoRoot,
   isFile,
   isMissing,
@@ -38,6 +37,7 @@ import {
   withEnvVariable,
 } from '../config/index.ts';
 import type { Problem, Secret } from '../contracts/index.ts';
+import { excludeMatcher } from '../paths/index.ts';
 import { convertSamSync, type SamSyncResult } from './sam-sync.ts';
 
 export {
@@ -252,8 +252,8 @@ export interface InitPlan {
   readonly config: string;
   /**
    * The variables for sealup.env, in order, each a Secret from config's envSecret (its variable
-   * is its envName): the password (absent without a terminal, or when sealup.env has one) and,
-   * from a sam-sync conversion, the content of each file written from a secret; or an EnvValue:
+   * is its envName): the password (absent without a terminal except conversion, or when
+   * sealup.env has one); or an EnvValue:
    * a public repository's server and host key (0045).
    */
   readonly env: readonly (Secret | EnvValue)[];
@@ -261,6 +261,8 @@ export interface InitPlan {
   readonly version: string;
   /** The variables the workflow's sealup step gets from secrets (default: the password's). */
   readonly variables?: readonly string[];
+  /** Direct local .env* source files to protect in .gitignore, whether present or absent. */
+  readonly ignoreFiles?: readonly string[];
 }
 
 /** A file init wrote or left, absolute. */
@@ -271,6 +273,8 @@ export interface InitFile {
   readonly change: 'added' | 'changed' | 'left';
   /** sealup.env: the variables added to it, in order. */
   readonly variables?: readonly string[];
+  /** .gitignore: the paths newly ignored by this run. */
+  readonly ignored?: readonly string[];
 }
 
 /**
@@ -295,7 +299,7 @@ export async function writeProject(
   if (plan.env.length > 0) {
     files.push(await writeEnv(join(project.folder, 'sealup.env'), plan.env));
   }
-  const gitignore = await addIgnoreLine(join(project.folder, '.gitignore'));
+  const gitignore = await addIgnoreLine(join(project.folder, '.gitignore'), plan.ignoreFiles ?? []);
   if (gitignore !== undefined) files.push(gitignore);
   files.push(await writeWorkflow(plan));
   return { files };
@@ -330,19 +334,29 @@ async function writeEnv(
   return { path: file, kind: 'env', change: 'changed', variables: added };
 }
 
-/** The `sealup.env` line in .gitignore: the file made when missing, the line added once. */
-async function addIgnoreLine(file: string): Promise<InitFile | undefined> {
+/** Adds missing ignore rules for connection secrets and local app env files. */
+async function addIgnoreLine(
+  file: string,
+  sources: readonly string[],
+): Promise<InitFile | undefined> {
   const before = await readText(file);
-  if (before === undefined) {
-    await writeFile(file, 'sealup.env\n', { flag: 'wx' });
-    return { path: file, kind: 'gitignore', change: 'added' };
-  }
-  const lines = before.split(/\r?\n/).map((line) => line.trim());
-  if (lines.includes('sealup.env') || lines.includes('/sealup.env')) return undefined;
-  const eol = before.includes('\r\n') ? '\r\n' : '\n';
-  const start = before === '' || before.endsWith('\n') ? '' : eol;
-  await appendFile(file, `${start}sealup.env${eol}`);
-  return { path: file, kind: 'gitignore', change: 'changed' };
+  const ignored = excludeMatcher((before ?? '').split(/\r?\n/));
+  const added = [...new Set(['sealup.env', ...sources])].filter((path) => !ignored(path));
+  if (added.length === 0) return undefined;
+  const patterns = added.map((path) =>
+    path === 'sealup.env' ? path : `/${path.replace(/[\\*?[\] ]/g, '\\$&')}`,
+  );
+  const eol = before?.includes('\r\n') ? '\r\n' : '\n';
+  const start = before === undefined || before === '' || before.endsWith('\n') ? '' : eol;
+  const text = `${start}${patterns.join(eol)}${eol}`;
+  if (before === undefined) await writeFile(file, text, { flag: 'wx' });
+  else await appendFile(file, text);
+  return {
+    path: file,
+    kind: 'gitignore',
+    change: before === undefined ? 'added' : 'changed',
+    ignored: added,
+  };
 }
 
 /** The workflow, created exclusively: one already there is left as it is. */
@@ -371,12 +385,6 @@ export interface SamSyncProject {
   /** The sam-sync files read, from the project folder: the deployment file, the download file. */
   readonly files: readonly string[];
   readonly result: SamSyncResult;
-  /**
-   * The content of each file written from a secret, by its variable, made a Secret as it is read
-   * (or why sealup.env cannot hold it); undefined when the local file is not there. Its line
-   * breaks are read as LF: an env file holds no CR.
-   */
-  readonly contents: ReadonlyMap<string, EnvSecret | undefined>;
   /** The package.json scripts that call sam-sync, by name. */
   readonly scripts: readonly string[];
 }
@@ -384,7 +392,7 @@ export interface SamSyncProject {
 /**
  * Reads a sam-sync file (`file`, from the project folder) and its download file beside it, the
  * same name with `download` for `deployment` (`.download.json`), when there is one; converts
- * them; reads the content of each file to be written from a secret, and package.json's scripts.
+ * them and reads package.json's scripts. Application env-file contents are never read here.
  */
 export async function readSamSync(folder: string, file: string): Promise<SamSyncProject> {
   const fromProject = (path: string) => relative(folder, path).split(sep).join('/');
@@ -404,7 +412,6 @@ export async function readSamSync(folder: string, file: string): Promise<SamSync
     return {
       files,
       result: { ok: false, problem: 'unreadable', file: deployment.name },
-      contents: new Map(),
       scripts,
     };
   }
@@ -412,18 +419,7 @@ export async function readSamSync(folder: string, file: string): Promise<SamSync
     deployment: { name: deployment.name, text: deployment.text },
     ...(read === undefined ? {} : { download: read }),
   });
-  const contents = new Map<string, EnvSecret | undefined>();
-  if (result.ok) {
-    for (const { local, variable } of result.conversion.write) {
-      const text = await readText(join(folder, ...local.split('/')));
-      const content = text?.replaceAll('\r\n', '\n');
-      contents.set(
-        variable,
-        content === undefined ? undefined : envSecret(variable, content, 'file'),
-      );
-    }
-  }
-  return { files, result, contents, scripts };
+  return { files, result, scripts };
 }
 
 /** The names of package.json's scripts that call sam-sync. */
